@@ -1,16 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function login() {
+    setLoading(true);
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -18,10 +21,25 @@ export default function LoginPage() {
 
     if (error) {
       alert(error.message);
-    } else {
-      alert("Login Successful");
-      router.push("/dashboard");
+      setLoading(false);
+      return;
     }
+
+    // Session बनने के लिए थोड़ा इंतज़ार
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session) {
+      alert("Login Successful ✅");
+      router.replace("/dashboard");
+    } else {
+      alert("Login Failed. Session not found.");
+    }
+
+    setLoading(false);
   }
 
   return (
@@ -42,7 +60,13 @@ export default function LoginPage() {
           borderRadius: "10px",
         }}
       >
-        <h2 style={{ color: "white", textAlign: "center" }}>
+        <h2
+          style={{
+            color: "white",
+            textAlign: "center",
+            marginBottom: "20px",
+          }}
+        >
           SD Media Login
         </h2>
 
@@ -51,7 +75,11 @@ export default function LoginPage() {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={{ width: "100%", padding: "10px", marginTop: "20px" }}
+          style={{
+            width: "100%",
+            padding: "12px",
+            marginBottom: "15px",
+          }}
         />
 
         <input
@@ -59,22 +87,28 @@ export default function LoginPage() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={{ width: "100%", padding: "10px", marginTop: "10px" }}
+          style={{
+            width: "100%",
+            padding: "12px",
+            marginBottom: "20px",
+          }}
         />
 
         <button
           onClick={login}
+          disabled={loading}
           style={{
             width: "100%",
             padding: "12px",
-            marginTop: "20px",
             background: "#22c55e",
             color: "white",
             border: "none",
+            borderRadius: "6px",
             cursor: "pointer",
+            fontWeight: "bold",
           }}
         >
-          Login
+          {loading ? "Logging in..." : "Login"}
         </button>
       </div>
     </main>
