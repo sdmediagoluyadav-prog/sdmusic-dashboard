@@ -1,27 +1,46 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function Dashboard() {
+  const router = useRouter();
+
   const [totalSongs, setTotalSongs] = useState(0);
   const [totalArtists, setTotalArtists] = useState(0);
   const [totalAlbums, setTotalAlbums] = useState(0);
   const [recentSongs, setRecentSongs] = useState<any[]>([]);
 
   useEffect(() => {
-    loadDashboard();
+    checkUser();
   }, []);
 
+  async function checkUser() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      router.push("/login");
+      return;
+    }
+
+    loadDashboard();
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
   async function loadDashboard() {
-    // Total Songs
     const { count: songsCount } = await supabase
       .from("songs")
       .select("*", { count: "exact", head: true });
 
     setTotalSongs(songsCount || 0);
 
-    // Artists & Albums
     const { data } = await supabase
       .from("songs")
       .select("artist_name, album_name");
@@ -34,7 +53,6 @@ export default function Dashboard() {
       setTotalAlbums(albums.size);
     }
 
-    // Recent Songs
     const { data: recent } = await supabase
       .from("songs")
       .select("*")
@@ -77,9 +95,32 @@ export default function Dashboard() {
         padding: "40px",
       }}
     >
-      <h1 style={{ color: "#22c55e", fontSize: "40px" }}>
-        🎉 Welcome to SD Music Dashboard
-      </h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <h1 style={{ color: "#22c55e", fontSize: "40px" }}>
+          🎉 Welcome to SD Music Dashboard
+        </h1>
+
+        <button
+          onClick={logout}
+          style={{
+            background: "#ef4444",
+            color: "#fff",
+            border: "none",
+            padding: "10px 18px",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          Logout
+        </button>
+      </div>
 
       <p style={{ marginTop: "20px", fontSize: "20px" }}>
         Login Successful ✅
@@ -93,35 +134,17 @@ export default function Dashboard() {
           marginTop: "40px",
         }}
       >
-        <div
-          style={{
-            background: "#1f2937",
-            padding: "20px",
-            borderRadius: "10px",
-          }}
-        >
+        <div style={{ background: "#1f2937", padding: "20px", borderRadius: "10px" }}>
           <h3>Total Songs</h3>
           <h1>{totalSongs}</h1>
         </div>
 
-        <div
-          style={{
-            background: "#1f2937",
-            padding: "20px",
-            borderRadius: "10px",
-          }}
-        >
+        <div style={{ background: "#1f2937", padding: "20px", borderRadius: "10px" }}>
           <h3>Total Artists</h3>
           <h1>{totalArtists}</h1>
         </div>
 
-        <div
-          style={{
-            background: "#1f2937",
-            padding: "20px",
-            borderRadius: "10px",
-          }}
-        >
+        <div style={{ background: "#1f2937", padding: "20px", borderRadius: "10px" }}>
           <h3>Total Albums</h3>
           <h1>{totalAlbums}</h1>
         </div>
@@ -169,15 +192,12 @@ export default function Dashboard() {
                 </td>
 
                 <td>{song.song_title}</td>
-
                 <td>{song.artist_name}</td>
-
                 <td>{song.status}</td>
 
                 <td>
                   <audio controls style={{ width: "220px" }}>
                     <source src={song.audio_url} />
-                    Your browser does not support audio.
                   </audio>
                 </td>
 
