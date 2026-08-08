@@ -26,12 +26,10 @@ export default function Dashboard() {
         return;
       }
 
-      if (mounted) {
-        await loadDashboard();
+      await loadDashboard();
 
-        if (mounted) {
-          setLoading(false);
-        }
+      if (mounted) {
+        setLoading(false);
       }
     }
 
@@ -50,6 +48,30 @@ export default function Dashboard() {
       subscription.unsubscribe();
     };
   }, [router]);
+
+  async function createSignedUrl(
+    pathOrUrl: string | null,
+    expiresIn = 3600
+  ) {
+    if (!pathOrUrl) return null;
+
+    // New uploads store the storage path.
+    if (!pathOrUrl.startsWith("http")) {
+      const { data, error } = await supabase.storage
+        .from("songs")
+        .createSignedUrl(pathOrUrl, expiresIn);
+
+      if (error) {
+        console.error("Signed URL error:", error);
+        return null;
+      }
+
+      return data?.signedUrl || null;
+    }
+
+    // Old songs still have public URLs.
+    return pathOrUrl;
+  }
 
   async function loadDashboard() {
     const { count: songsCount, error: songsError } = await supabase
@@ -99,9 +121,25 @@ export default function Dashboard() {
       return;
     }
 
-    if (recent) {
-      setRecentSongs(recent);
+    if (!recent) {
+      setRecentSongs([]);
+      return;
     }
+
+    const songsWithUrls = await Promise.all(
+      recent.map(async (song: any) => {
+        const coverUrl = await createSignedUrl(song.cover_url);
+        const audioUrl = await createSignedUrl(song.audio_url);
+
+        return {
+          ...song,
+          display_cover_url: coverUrl,
+          display_audio_url: audioUrl,
+        };
+      })
+    );
+
+    setRecentSongs(songsWithUrls);
   }
 
   async function logout() {
@@ -286,9 +324,9 @@ export default function Dashboard() {
             {recentSongs.map((song: any) => (
               <tr key={song.id}>
                 <td style={{ padding: "10px" }}>
-                  {song.cover_url ? (
+                  {song.display_cover_url ? (
                     <img
-                      src={song.cover_url}
+                      src={song.display_cover_url}
                       alt={song.song_title || "Song Cover"}
                       width={60}
                       height={60}
@@ -309,9 +347,12 @@ export default function Dashboard() {
                 <td>{song.status}</td>
 
                 <td>
-                  {song.audio_url ? (
-                    <audio controls style={{ width: "220px" }}>
-                      <source src={song.audio_url} />
+                  {song.display_audio_url ? (
+                    <audio
+                      controls
+                      style={{ width: "220px" }}
+                    >
+                      <source src={song.display_audio_url} />
                       Your browser does not support audio.
                     </audio>
                   ) : (
