@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function UploadPage() {
+  const router = useRouter();
+
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [loading, setLoading] = useState(false);
+
   const [songTitle, setSongTitle] = useState("");
   const [artistName, setArtistName] = useState("");
   const [albumName, setAlbumName] = useState("");
@@ -17,86 +23,135 @@ export default function UploadPage() {
   const [cover, setCover] = useState<File | null>(null);
   const [audio, setAudio] = useState<File | null>(null);
 
-  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let mounted = true;
 
+    async function checkUser() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault();
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
 
-  if (!cover || !audio) {
-    alert("Please select Cover Image and Audio File");
-    return;
+      if (mounted) {
+        setCheckingAuth(false);
+      }
+    }
+
+    checkUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/login");
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!cover || !audio) {
+      alert("Please select Cover Image and Audio File");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Cover Upload
+      const coverName = `${Date.now()}-${cover.name}`;
+
+      const { error: coverError } = await supabase.storage
+        .from("songs")
+        .upload(`covers/${coverName}`, cover);
+
+      if (coverError) throw coverError;
+
+      const { data: coverData } = supabase.storage
+        .from("songs")
+        .getPublicUrl(`covers/${coverName}`);
+
+      // Audio Upload
+      const audioName = `${Date.now()}-${audio.name}`;
+
+      const { error: audioError } = await supabase.storage
+        .from("songs")
+        .upload(`audio/${audioName}`, audio);
+
+      if (audioError) throw audioError;
+
+      const { data: audioData } = supabase.storage
+        .from("songs")
+        .getPublicUrl(`audio/${audioName}`);
+
+      // Save in Database
+      const { error } = await supabase.from("songs").insert([
+        {
+          song_title: songTitle,
+          artist_name: artistName,
+          album_name: albumName,
+          singer_name: singerName,
+          composer: composer,
+          lyricist: lyricist,
+          genre: genre,
+          language: language,
+          release_date: releaseDate,
+          cover_url: coverData.publicUrl,
+          audio_url: audioData.publicUrl,
+          status: "Pending",
+        },
+      ]);
+
+      if (error) throw error;
+
+      alert("Song Uploaded Successfully ✅");
+
+      setSongTitle("");
+      setArtistName("");
+      setAlbumName("");
+      setSingerName("");
+      setComposer("");
+      setLyricist("");
+      setGenre("");
+      setLanguage("");
+      setReleaseDate("");
+      setCover(null);
+      setAudio(null);
+    } catch (err) {
+      console.error(err);
+      alert("Upload Failed ❌");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  setLoading(true);
-
-  try {
-    // Cover Upload
-const coverName = `${Date.now()}-${cover.name}`;
-
-const { error: coverError } = await supabase.storage
-  .from("songs")
-  .upload(`covers/${coverName}`, cover);
-
-if (coverError) throw coverError;
-
-const { data: coverData } = supabase.storage
-  .from("songs")
-  .getPublicUrl(`covers/${coverName}`);
-
-// Audio Upload
-const audioName = `${Date.now()}-${audio.name}`;
-
-const { error: audioError } = await supabase.storage
-  .from("songs")
-  .upload(`audio/${audioName}`, audio);
-
-if (audioError) throw audioError;
-
-const { data: audioData } = supabase.storage
-  .from("songs")
-  .getPublicUrl(`audio/${audioName}`);
-    // Save in Database
-    const { error } = await supabase.from("songs").insert([
-  {
-    song_title: songTitle,
-    artist_name: artistName,
-    album_name: albumName,
-    singer_name: singerName,
-    composer: composer,
-    lyricist: lyricist,
-    genre: genre,
-    language: language,
-    release_date: releaseDate,
-    cover_url: coverData.publicUrl,
-    audio_url: audioData.publicUrl,
-    status: "Pending",
-  },
-]);
-
-if (error) throw error;
-
-alert("Song Uploaded Successfully ✅");
-
-setSongTitle("");
-setArtistName("");
-setAlbumName("");
-setSingerName("");
-setComposer("");
-setLyricist("");
-setGenre("");
-setLanguage("");
-setReleaseDate("");
-setCover(null);
-setAudio(null);
-        
-  } catch (err) {
-    console.error(err);
-    alert("Upload Failed ❌");
+  if (checkingAuth) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "#111827",
+          color: "white",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          fontSize: "22px",
+        }}
+      >
+        Checking Login... 🔐
+      </main>
+    );
   }
-
-  setLoading(false);
-}
 
   return (
     <main
@@ -174,6 +229,7 @@ setAudio(null);
         />
 
         <label>Cover Image</label>
+
         <input
           type="file"
           accept="image/*"
@@ -181,6 +237,7 @@ setAudio(null);
         />
 
         <label>Audio File</label>
+
         <input
           type="file"
           accept="audio/*"
@@ -189,13 +246,14 @@ setAudio(null);
 
         <button
           type="submit"
+          disabled={loading}
           style={{
-            background: "#22c55e",
+            background: loading ? "#6b7280" : "#22c55e",
             color: "#fff",
             border: "none",
             padding: "12px",
             borderRadius: "8px",
-            cursor: "pointer",
+            cursor: loading ? "not-allowed" : "pointer",
           }}
         >
           {loading ? "Uploading..." : "Upload Song"}
