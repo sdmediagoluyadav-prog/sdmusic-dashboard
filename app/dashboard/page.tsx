@@ -55,7 +55,6 @@ export default function Dashboard() {
   ) {
     if (!pathOrUrl) return null;
 
-    // New uploads store the storage path.
     if (!pathOrUrl.startsWith("http")) {
       const { data, error } = await supabase.storage
         .from("songs")
@@ -69,21 +68,23 @@ export default function Dashboard() {
       return data?.signedUrl || null;
     }
 
-    // Old songs still have public URLs.
     return pathOrUrl;
   }
 
   async function loadDashboard() {
-    const { count: songsCount, error: songsError } = await supabase
+    const { count, error } = await supabase
       .from("songs")
-      .select("*", { count: "exact", head: true });
+      .select("*", {
+        count: "exact",
+        head: true,
+      });
 
-    if (songsError) {
-      console.error("Songs count error:", songsError);
+    if (error) {
+      console.error("Songs count error:", error);
       return;
     }
 
-    setTotalSongs(songsCount || 0);
+    setTotalSongs(count || 0);
 
     const { data, error: artistError } = await supabase
       .from("songs")
@@ -146,8 +147,8 @@ export default function Dashboard() {
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      console.error("Logout error:", error);
       alert("Logout Failed ❌");
+      console.error(error);
       return;
     }
 
@@ -167,8 +168,8 @@ export default function Dashboard() {
       .eq("id", id);
 
     if (error) {
-      console.error("Delete error:", error);
       alert("Delete Failed ❌");
+      console.error(error);
       return;
     }
 
@@ -182,7 +183,7 @@ export default function Dashboard() {
       <main
         style={{
           minHeight: "100vh",
-          background: "#111827",
+          background: "#0f172a",
           color: "white",
           display: "flex",
           justifyContent: "center",
@@ -198,202 +199,478 @@ export default function Dashboard() {
   return (
     <main
       style={{
-        background: "#111827",
         minHeight: "100vh",
+        background: "#0f172a",
         color: "white",
-        padding: "40px",
+        display: "flex",
       }}
     >
-      <div
+      {/* SIDEBAR */}
+      <aside
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "20px",
-          flexWrap: "wrap",
+          width: "240px",
+          minHeight: "100vh",
+          background: "#111827",
+          borderRight: "1px solid #1f2937",
+          padding: "25px 15px",
+          position: "fixed",
+          left: 0,
+          top: 0,
+          bottom: 0,
         }}
       >
-        <h1
+        <div
           style={{
-            color: "#22c55e",
-            fontSize: "40px",
-            margin: 0,
+            padding: "10px",
+            marginBottom: "30px",
           }}
         >
-          🎉 Welcome to SD Music Dashboard
-        </h1>
+          <h2
+            style={{
+              margin: 0,
+              color: "#22c55e",
+              fontSize: "24px",
+            }}
+          >
+            🎵 SD MUSIC
+          </h2>
+
+          <p
+            style={{
+              marginTop: "6px",
+              color: "#9ca3af",
+              fontSize: "13px",
+            }}
+          >
+            Music Management
+          </p>
+        </div>
 
         <button
-          onClick={logout}
+          onClick={() => router.push("/dashboard")}
           style={{
-            background: "#ef4444",
-            color: "#fff",
+            width: "100%",
+            padding: "13px",
+            marginBottom: "10px",
+            background: "#22c55e",
+            color: "white",
             border: "none",
-            padding: "10px 18px",
             borderRadius: "8px",
+            textAlign: "left",
             cursor: "pointer",
             fontWeight: "bold",
           }}
         >
-          Logout
+          🏠 Dashboard
         </button>
-      </div>
 
-      <p
-        style={{
-          marginTop: "20px",
-          fontSize: "20px",
-        }}
-      >
-        Login Successful ✅
-      </p>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: "20px",
-          marginTop: "40px",
-        }}
-      >
-        <div
-          style={{
-            background: "#1f2937",
-            padding: "20px",
-            borderRadius: "10px",
-          }}
-        >
-          <h3>Total Songs</h3>
-          <h1>{totalSongs}</h1>
-        </div>
-
-        <div
-          style={{
-            background: "#1f2937",
-            padding: "20px",
-            borderRadius: "10px",
-          }}
-        >
-          <h3>Total Artists</h3>
-          <h1>{totalArtists}</h1>
-        </div>
-
-        <div
-          style={{
-            background: "#1f2937",
-            padding: "20px",
-            borderRadius: "10px",
-          }}
-        >
-          <h3>Total Albums</h3>
-          <h1>{totalAlbums}</h1>
-        </div>
-      </div>
-
-      <div
-        style={{
-          marginTop: "50px",
-          background: "#1f2937",
-          padding: "20px",
-          borderRadius: "10px",
-          overflowX: "auto",
-        }}
-      >
-        <h2>🎵 Recent Uploaded Songs</h2>
-
-        <table
+        <button
+          onClick={() => router.push("/songs")}
           style={{
             width: "100%",
-            marginTop: "20px",
-            borderCollapse: "collapse",
-            minWidth: "900px",
+            padding: "13px",
+            marginBottom: "10px",
+            background: "transparent",
+            color: "#d1d5db",
+            border: "none",
+            borderRadius: "8px",
+            textAlign: "left",
+            cursor: "pointer",
           }}
         >
-          <thead>
-            <tr>
-              <th align="left">Cover</th>
-              <th align="left">Song</th>
-              <th align="left">Artist</th>
-              <th align="left">Status</th>
-              <th align="left">Play</th>
-              <th align="left">Action</th>
-            </tr>
-          </thead>
+          🎵 All Songs
+        </button>
 
-          <tbody>
-            {recentSongs.map((song: any) => (
-              <tr key={song.id}>
-                <td style={{ padding: "10px" }}>
-                  {song.display_cover_url ? (
-                    <img
-                      src={song.display_cover_url}
-                      alt={song.song_title || "Song Cover"}
-                      width={60}
-                      height={60}
-                      style={{
-                        borderRadius: "8px",
-                        objectFit: "cover",
-                      }}
-                    />
-                  ) : (
-                    <div>No Cover</div>
-                  )}
-                </td>
+        <button
+          onClick={() => router.push("/upload")}
+          style={{
+            width: "100%",
+            padding: "13px",
+            marginBottom: "10px",
+            background: "transparent",
+            color: "#d1d5db",
+            border: "none",
+            borderRadius: "8px",
+            textAlign: "left",
+            cursor: "pointer",
+          }}
+        >
+          ⬆️ Upload Song
+        </button>
 
-                <td>{song.song_title}</td>
+        <div
+          style={{
+            marginTop: "40px",
+            borderTop: "1px solid #1f2937",
+            paddingTop: "20px",
+          }}
+        >
+          <button
+            onClick={logout}
+            style={{
+              width: "100%",
+              padding: "13px",
+              background: "#ef4444",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              textAlign: "left",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            🚪 Logout
+          </button>
+        </div>
+      </aside>
 
-                <td>{song.artist_name}</td>
+      {/* MAIN CONTENT */}
+      <section
+        style={{
+          marginLeft: "240px",
+          width: "calc(100% - 240px)",
+          padding: "35px",
+        }}
+      >
+        {/* HEADER */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "20px",
+            flexWrap: "wrap",
+            marginBottom: "35px",
+          }}
+        >
+          <div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "32px",
+              }}
+            >
+              Dashboard
+            </h1>
 
-                <td>{song.status}</td>
+            <p
+              style={{
+                color: "#9ca3af",
+                marginTop: "8px",
+              }}
+            >
+              Welcome back! Manage your music here.
+            </p>
+          </div>
 
-                <td>
-                  {song.display_audio_url ? (
-                    <audio
-                      controls
-                      style={{ width: "220px" }}
-                    >
-                      <source src={song.display_audio_url} />
-                      Your browser does not support audio.
-                    </audio>
-                  ) : (
-                    "No Audio"
-                  )}
-                </td>
+          <button
+            onClick={() => router.push("/upload")}
+            style={{
+              background: "#22c55e",
+              color: "white",
+              border: "none",
+              padding: "12px 20px",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            + Upload Song
+          </button>
+        </div>
 
-                <td>
-                  <button
-                    onClick={() => deleteSong(song.id)}
-                    style={{
-                      background: "#ef4444",
-                      color: "white",
-                      border: "none",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </td>
+        {/* STAT CARDS */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: "20px",
+          }}
+        >
+          <div
+            style={{
+              background: "#1e293b",
+              padding: "25px",
+              borderRadius: "14px",
+              border: "1px solid #334155",
+            }}
+          >
+            <p style={{ color: "#94a3b8", margin: 0 }}>
+              Total Songs
+            </p>
+
+            <h2
+              style={{
+                fontSize: "34px",
+                margin: "10px 0 0",
+                color: "#22c55e",
+              }}
+            >
+              {totalSongs}
+            </h2>
+          </div>
+
+          <div
+            style={{
+              background: "#1e293b",
+              padding: "25px",
+              borderRadius: "14px",
+              border: "1px solid #334155",
+            }}
+          >
+            <p style={{ color: "#94a3b8", margin: 0 }}>
+              Total Artists
+            </p>
+
+            <h2
+              style={{
+                fontSize: "34px",
+                margin: "10px 0 0",
+                color: "#38bdf8",
+              }}
+            >
+              {totalArtists}
+            </h2>
+          </div>
+
+          <div
+            style={{
+              background: "#1e293b",
+              padding: "25px",
+              borderRadius: "14px",
+              border: "1px solid #334155",
+            }}
+          >
+            <p style={{ color: "#94a3b8", margin: 0 }}>
+              Total Albums
+            </p>
+
+            <h2
+              style={{
+                fontSize: "34px",
+                margin: "10px 0 0",
+                color: "#f59e0b",
+              }}
+            >
+              {totalAlbums}
+            </h2>
+          </div>
+        </div>
+
+        {/* RECENT SONGS */}
+        <div
+          style={{
+            marginTop: "35px",
+            background: "#1e293b",
+            borderRadius: "14px",
+            padding: "25px",
+            border: "1px solid #334155",
+            overflowX: "auto",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "20px",
+            }}
+          >
+            <h2 style={{ margin: 0 }}>
+              🎵 Recent Uploaded Songs
+            </h2>
+
+            <button
+              onClick={() => router.push("/songs")}
+              style={{
+                background: "transparent",
+                color: "#22c55e",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              View All →
+            </button>
+          </div>
+
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: "850px",
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  borderBottom: "1px solid #334155",
+                  color: "#94a3b8",
+                }}
+              >
+                <th
+                  align="left"
+                  style={{ padding: "12px 8px" }}
+                >
+                  Cover
+                </th>
+
+                <th
+                  align="left"
+                  style={{ padding: "12px 8px" }}
+                >
+                  Song
+                </th>
+
+                <th
+                  align="left"
+                  style={{ padding: "12px 8px" }}
+                >
+                  Artist
+                </th>
+
+                <th
+                  align="left"
+                  style={{ padding: "12px 8px" }}
+                >
+                  Status
+                </th>
+
+                <th
+                  align="left"
+                  style={{ padding: "12px 8px" }}
+                >
+                  Play
+                </th>
+
+                <th
+                  align="left"
+                  style={{ padding: "12px 8px" }}
+                >
+                  Action
+                </th>
               </tr>
-            ))}
+            </thead>
 
-            {recentSongs.length === 0 && (
-              <tr>
-                <td
-                  colSpan={6}
+            <tbody>
+              {recentSongs.map((song: any) => (
+                <tr
+                  key={song.id}
                   style={{
-                    padding: "30px",
-                    textAlign: "center",
+                    borderBottom:
+                      "1px solid #273449",
                   }}
                 >
-                  अभी कोई song upload नहीं हुआ है।
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                  <td style={{ padding: "12px 8px" }}>
+                    {song.display_cover_url ? (
+                      <img
+                        src={song.display_cover_url}
+                        alt={
+                          song.song_title ||
+                          "Song Cover"
+                        }
+                        width={55}
+                        height={55}
+                        style={{
+                          borderRadius: "8px",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      "No Cover"
+                    )}
+                  </td>
+
+                  <td style={{ padding: "12px 8px" }}>
+                    <strong>
+                      {song.song_title}
+                    </strong>
+                  </td>
+
+                  <td style={{ padding: "12px 8px" }}>
+                    {song.artist_name}
+                  </td>
+
+                  <td style={{ padding: "12px 8px" }}>
+                    <span
+                      style={{
+                        background:
+                          song.status === "Pending"
+                            ? "#78350f"
+                            : "#14532d",
+                        color:
+                          song.status === "Pending"
+                            ? "#fbbf24"
+                            : "#86efac",
+                        padding:
+                          "5px 10px",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      {song.status}
+                    </span>
+                  </td>
+
+                  <td style={{ padding: "12px 8px" }}>
+                    {song.display_audio_url ? (
+                      <audio
+                        controls
+                        style={{
+                          width: "210px",
+                        }}
+                      >
+                        <source
+                          src={
+                            song.display_audio_url
+                          }
+                        />
+                      </audio>
+                    ) : (
+                      "No Audio"
+                    )}
+                  </td>
+
+                  <td style={{ padding: "12px 8px" }}>
+                    <button
+                      onClick={() =>
+                        deleteSong(song.id)
+                      }
+                      style={{
+                        background: "#ef4444",
+                        color: "white",
+                        border: "none",
+                        padding:
+                          "7px 12px",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {recentSongs.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    style={{
+                      padding: "40px",
+                      textAlign: "center",
+                      color: "#94a3b8",
+                    }}
+                  >
+                    अभी कोई song upload नहीं हुआ है।
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </main>
   );
 }
