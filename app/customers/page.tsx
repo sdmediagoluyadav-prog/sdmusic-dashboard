@@ -54,7 +54,41 @@ export default function CustomersPage() {
         email: email.trim() || null,
       },
     ]);
+useEffect(() => {
+  let mounted = true;
 
+  async function checkUser() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      router.replace("/login");
+      return;
+    }
+
+    await fetchCustomers();
+
+    if (mounted) {
+      setCheckingAuth(false);
+    }
+  }
+
+  checkUser();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!session) {
+      router.replace("/login");
+    }
+  });
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, [router]);
     if (error) {
       console.error("Customer add error:", error);
       alert("Customer Add Failed ❌");
