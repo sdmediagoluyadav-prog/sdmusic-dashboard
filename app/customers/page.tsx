@@ -26,12 +26,14 @@ export default function CustomersPage() {
   useEffect(() => {
     let mounted = true;
 
-    async function checkUser() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    async function start() {
+      const { data } = await supabase.auth.getSession();
 
-      if (!session) {
+      if (!data.session) {
+        if (mounted) {
+          setCheckingAuth(false);
+        }
+
         router.replace("/login");
         return;
       }
@@ -43,7 +45,7 @@ export default function CustomersPage() {
       }
     }
 
-    checkUser();
+    start();
 
     const {
       data: { subscription },
@@ -67,7 +69,6 @@ export default function CustomersPage() {
 
     if (error) {
       console.error("Customers fetch error:", error);
-      alert("Customers load failed ❌");
       return;
     }
 
@@ -137,14 +138,13 @@ export default function CustomersPage() {
         padding: "35px",
       }}
     >
-      {/* HEADER */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          gap: "20px",
           flexWrap: "wrap",
+          gap: "15px",
           marginBottom: "30px",
         }}
       >
@@ -159,13 +159,8 @@ export default function CustomersPage() {
             👥 Customers
           </h1>
 
-          <p
-            style={{
-              color: "#94a3b8",
-              marginTop: "8px",
-            }}
-          >
-            Manage your customers and music labels.
+          <p style={{ color: "#94a3b8" }}>
+            Manage Customers and Labels
           </p>
         </div>
 
@@ -185,13 +180,11 @@ export default function CustomersPage() {
         </button>
       </div>
 
-      {/* ADD CUSTOMER */}
       <section
         style={{
           background: "#1e293b",
-          border: "1px solid #334155",
-          borderRadius: "14px",
           padding: "25px",
+          borderRadius: "14px",
           maxWidth: "700px",
           marginBottom: "35px",
         }}
@@ -222,7 +215,7 @@ export default function CustomersPage() {
 
           <input
             type="email"
-            placeholder="Customer Email (optional)"
+            placeholder="Customer Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             style={inputStyle}
@@ -237,9 +230,8 @@ export default function CustomersPage() {
               border: "none",
               padding: "13px",
               borderRadius: "8px",
-              cursor: loading ? "not-allowed" : "pointer",
+              cursor: "pointer",
               fontWeight: "bold",
-              fontSize: "15px",
             }}
           >
             {loading ? "Adding..." : "Add Customer"}
@@ -247,13 +239,11 @@ export default function CustomersPage() {
         </form>
       </section>
 
-      {/* CUSTOMER LIST */}
       <section
         style={{
           background: "#1e293b",
-          border: "1px solid #334155",
-          borderRadius: "14px",
           padding: "25px",
+          borderRadius: "14px",
           overflowX: "auto",
         }}
       >
@@ -264,79 +254,43 @@ export default function CustomersPage() {
             width: "100%",
             borderCollapse: "collapse",
             minWidth: "700px",
-            marginTop: "20px",
           }}
         >
           <thead>
-            <tr
-              style={{
-                borderBottom: "1px solid #334155",
-                color: "#94a3b8",
-              }}
-            >
-              <th align="left" style={{ padding: "12px 8px" }}>
-                ID
-              </th>
-
-              <th align="left" style={{ padding: "12px 8px" }}>
-                Customer
-              </th>
-
-              <th align="left" style={{ padding: "12px 8px" }}>
-                Label
-              </th>
-
-              <th align="left" style={{ padding: "12px 8px" }}>
-                Email
-              </th>
-
-              <th align="left" style={{ padding: "12px 8px" }}>
-                Created
-              </th>
+            <tr>
+              <th align="left">ID</th>
+              <th align="left">Customer</th>
+              <th align="left">Label</th>
+              <th align="left">Email</th>
+              <th align="left">Created</th>
             </tr>
           </thead>
 
           <tbody>
             {customers.map((customer) => (
-              <tr
-                key={customer.id}
-                style={{
-                  borderBottom: "1px solid #273449",
-                }}
-              >
-                <td style={{ padding: "14px 8px" }}>
+              <tr key={customer.id}>
+                <td style={{ padding: "12px 5px" }}>
                   {customer.id}
                 </td>
 
-                <td
-                  style={{
-                    padding: "14px 8px",
-                    fontWeight: "bold",
-                  }}
-                >
+                <td style={{ padding: "12px 5px" }}>
                   {customer.customer_name}
                 </td>
 
-                <td style={{ padding: "14px 8px" }}>
-                  <span
-                    style={{
-                      background: "#14532d",
-                      color: "#86efac",
-                      padding: "6px 10px",
-                      borderRadius: "20px",
-                      fontSize: "13px",
-                    }}
-                  >
-                    🏷️ {customer.label_name}
-                  </span>
+                <td style={{ padding: "12px 5px" }}>
+                  🏷️ {customer.label_name}
                 </td>
 
-                <td style={{ padding: "14px 8px" }}>
+                <td style={{ padding: "12px 5px" }}>
                   {customer.email || "—"}
                 </td>
 
-                <td style={{ padding: "14px 8px" }}>
-                  {new Date(customer.created_at).toLocaleDateString()}
+                <td style={{ padding: "12px 5px" }}>
+                  {customer.created_at
+                    ? new Date(
+                        customer.created_at
+                      ).toLocaleDateString()
+                    : "—"}
                 </td>
               </tr>
             ))}
@@ -346,7 +300,7 @@ export default function CustomersPage() {
                 <td
                   colSpan={5}
                   style={{
-                    padding: "40px",
+                    padding: "35px",
                     textAlign: "center",
                     color: "#94a3b8",
                   }}
