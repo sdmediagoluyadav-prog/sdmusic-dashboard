@@ -320,10 +320,10 @@ export default function Dashboard() {
             }}
           >
             <button
- onClick={() => window.location.href = "/customers"}
+  onClick={() => window.location.href = "/customers"}
   style={{
     width: "100%",
-    padding: "12px",
+    padding: "12px 15px",
     marginTop: "10px",
     background: "#1f2937",
     color: "white",
@@ -331,10 +331,11 @@ export default function Dashboard() {
     borderRadius: "8px",
     cursor: "pointer",
     textAlign: "left",
+    fontSize: "15px",
   }}
 >
   👥 Customers
-
+  
 </button>
             🚪 Logout
           </button>
