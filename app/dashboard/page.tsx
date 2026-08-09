@@ -319,6 +319,22 @@ export default function Dashboard() {
               fontWeight: "bold",
             }}
           >
+            <button
+  onClick={() => router.push("/customers")}
+  style={{
+    width: "100%",
+    padding: "12px",
+    marginTop: "10px",
+    background: "#1f2937",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    textAlign: "left",
+  }}
+>
+  👥 Customers
+</button>
             🚪 Logout
           </button>
         </div>
