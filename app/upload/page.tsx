@@ -68,54 +68,77 @@ export default function UploadPage() {
     setLoading(true);
 
     try {
-      // Cover Upload
-      const coverName = `${Date.now()}-${cover.name}`;
+      const timestamp = Date.now();
+
+      // =========================
+      // COVER UPLOAD
+      // =========================
+
+      const coverName = `${timestamp}-${cover.name}`;
 
       const { error: coverError } = await supabase.storage
         .from("songs")
         .upload(`covers/${coverName}`, cover);
 
-      if (coverError) throw coverError;
+      if (coverError) {
+        throw coverError;
+      }
 
-      const { data: coverData } = supabase.storage
-        .from("songs")
-        .getPublicUrl(`covers/${coverName}`);
+      // =========================
+      // AUDIO UPLOAD
+      // =========================
 
-      // Audio Upload
-      const audioName = `${Date.now()}-${audio.name}`;
+      const audioName = `${timestamp}-${audio.name}`;
 
       const { error: audioError } = await supabase.storage
         .from("songs")
         .upload(`audio/${audioName}`, audio);
 
-      if (audioError) throw audioError;
+      if (audioError) {
+        throw audioError;
+      }
 
-      const { data: audioData } = supabase.storage
+      // =========================
+      // SAVE STORAGE PATH
+      // =========================
+
+      const coverPath = `covers/${coverName}`;
+      const audioPath = `audio/${audioName}`;
+
+      // =========================
+      // SAVE DATABASE
+      // =========================
+
+      const { error: databaseError } = await supabase
         .from("songs")
-        .getPublicUrl(`audio/${audioName}`);
+        .insert([
+          {
+            song_title: songTitle,
+            artist_name: artistName,
+            album_name: albumName,
+            singer_name: singerName,
+            composer: composer,
+            lyricist: lyricist,
+            genre: genre,
+            language: language,
+            release_date: releaseDate || null,
 
-      // Save in Database
-      const { error } = await supabase.from("songs").insert([
-        {
-          song_title: songTitle,
-          artist_name: artistName,
-          album_name: albumName,
-          singer_name: singerName,
-          composer: composer,
-          lyricist: lyricist,
-          genre: genre,
-          language: language,
-          release_date: releaseDate,
-          cover_url: coverData.publicUrl,
-          audio_url: audioData.publicUrl,
-          status: "Pending",
-        },
-      ]);
+            // New uploads now save storage paths
+            // instead of public URLs.
+            cover_url: coverPath,
+            audio_url: audioPath,
 
-      if (error) throw error;
+            status: "Pending",
+          },
+        ]);
+
+      if (databaseError) {
+        throw databaseError;
+      }
 
       alert("Song Uploaded Successfully ✅");
 
+      // Clear form
       setSongTitle("");
       setArtistName("");
       setAlbumName("");
@@ -127,8 +150,17 @@ export default function UploadPage() {
       setReleaseDate("");
       setCover(null);
       setAudio(null);
-    } catch (err) {
-      console.error(err);
+
+      // Reset file inputs
+      const fileInputs = document.querySelectorAll(
+        'input[type="file"]'
+      ) as NodeListOf<HTMLInputElement>;
+
+      fileInputs.forEach((input) => {
+        input.value = "";
+      });
+    } catch (error) {
+      console.error("Upload error:", error);
       alert("Upload Failed ❌");
     } finally {
       setLoading(false);
@@ -233,7 +265,9 @@ export default function UploadPage() {
         <input
           type="file"
           accept="image/*"
-          onChange={(e) => setCover(e.target.files?.[0] || null)}
+          onChange={(e) =>
+            setCover(e.target.files?.[0] || null)
+          }
         />
 
         <label>Audio File</label>
@@ -241,7 +275,9 @@ export default function UploadPage() {
         <input
           type="file"
           accept="audio/*"
-          onChange={(e) => setAudio(e.target.files?.[0] || null)}
+          onChange={(e) =>
+            setAudio(e.target.files?.[0] || null)
+          }
         />
 
         <button
@@ -254,6 +290,7 @@ export default function UploadPage() {
             padding: "12px",
             borderRadius: "8px",
             cursor: loading ? "not-allowed" : "pointer",
+            fontWeight: "bold",
           }}
         >
           {loading ? "Uploading..." : "Upload Song"}

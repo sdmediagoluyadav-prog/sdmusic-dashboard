@@ -23,44 +23,6 @@ export default function CustomersPage() {
   const [labelName, setLabelName] = useState("");
   const [email, setEmail] = useState("");
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function start() {
-      const { data } = await supabase.auth.getSession();
-
-      if (!data.session) {
-        if (mounted) {
-          setCheckingAuth(false);
-        }
-
-        router.replace("/login");
-        return;
-      }
-
-      await fetchCustomers();
-
-      if (mounted) {
-        setCheckingAuth(false);
-      }
-    }
-
-    start();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.replace("/login");
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [router]);
-
   async function fetchCustomers() {
     const { data, error } = await supabase
       .from("customers")
