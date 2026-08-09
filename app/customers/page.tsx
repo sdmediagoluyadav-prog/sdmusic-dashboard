@@ -229,33 +229,98 @@ export default function CustomersPage() {
           </thead>
 
           <tbody>
-            {customers.map((customer) => (
-              <tr key={customer.id}>
-                <td style={{ padding: "12px 5px" }}>
-                  {customer.id}
-                </td>
+  {customers.map((customer) => (
+    <tr key={customer.id}>
+      <td style={{ padding: "12px 5px" }}>
+        {customer.id}
+      </td>
 
-                <td style={{ padding: "12px 5px" }}>
-                  {customer.customer_name}
-                </td>
+      <td style={{ padding: "12px 5px" }}>
+        {customer.customer_name}
+      </td>
 
-                <td style={{ padding: "12px 5px" }}>
-                  🏷️ {customer.label_name}
-                </td>
+      <td style={{ padding: "12px 5px" }}>
+        🏷️ {customer.label_name}
+      </td>
 
-                <td style={{ padding: "12px 5px" }}>
-                  {customer.email || "—"}
-                </td>
+      <td style={{ padding: "12px 5px" }}>
+        {customer.email || "—"}
+      </td>
 
-                <td style={{ padding: "12px 5px" }}>
-                  {customer.created_at
-                    ? new Date(
-                        customer.created_at
-                      ).toLocaleDateString()
-                    : "—"}
-                </td>
-              </tr>
-            ))}
+      <td style={{ padding: "12px 5px" }}>
+        {customer.created_at
+          ? new Date(
+              customer.created_at
+            ).toLocaleDateString()
+          : "—"}
+      </td>
+      <th
+  align="left"
+  style={{ padding: "12px 5px" }}
+>
+  Action
+</th>
+
+      <td style={{ padding: "12px 5px" }}>
+        <button
+          onClick={async () => {
+            if (!customer.email) {
+              alert("Customer email नहीं है ❌");
+              return;
+            }
+
+            const confirmInvite = confirm(
+              `${customer.customer_name} को invite भेजना है?`
+            );
+
+            if (!confirmInvite) return;
+
+            try {
+              const response = await fetch(
+                "/api/customers/invite",
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    customerId: customer.id,
+                    email: customer.email,
+                  }),
+                }
+              );
+
+              const result = await response.json();
+
+              if (!response.ok) {
+                throw new Error(
+                  result.error || "Invite failed"
+                );
+              }
+
+              alert(
+                "Customer Invite Successfully Sent ✅"
+              );
+            } catch (error) {
+              console.error(error);
+              alert("Invite Failed ❌");
+            }
+          }}
+          style={{
+            background: "#22c55e",
+            color: "white",
+            border: "none",
+            padding: "8px 12px",
+            borderRadius: "6px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          📧 Send Invite
+        </button>
+      </td>
+    </tr>
+  ))}
 
             {customers.length === 0 && (
               <tr>
