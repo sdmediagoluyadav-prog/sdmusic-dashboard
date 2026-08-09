@@ -112,8 +112,14 @@ export default function Dashboard() {
     }
 
     const { data: recent, error: recentError } = await supabase
-      .from("songs")
-      .select("*")
+  .from("songs")
+  .select(`
+    *,
+    customers (
+      customer_name,
+      label_name
+    )
+  `)
       .order("id", { ascending: false })
       .limit(5);
 
@@ -335,7 +341,7 @@ export default function Dashboard() {
   }}
 >
   👥 Customers
-  
+
 </button>
             🚪 Logout
           </button>
@@ -554,7 +560,12 @@ export default function Dashboard() {
                 >
                   Status
                 </th>
-
+<th
+  align="left"
+  style={{ padding: "12px 8px" }}
+>
+  Customer / Label
+</th>
                 <th
                   align="left"
                   style={{ padding: "12px 8px" }}
@@ -630,7 +641,11 @@ export default function Dashboard() {
                       {song.status}
                     </span>
                   </td>
-
+<td style={{ padding: "10px" }}>
+  {song.customers
+  ? `${song.customers.customer_name} (${song.customers.label_name || "No Label"})`
+  : "No Customer"}
+</td>
                   <td style={{ padding: "12px 8px" }}>
                     {song.display_audio_url ? (
                       <audio
