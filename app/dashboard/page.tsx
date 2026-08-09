@@ -242,7 +242,7 @@ export default function Dashboard() {
               fontSize: "13px",
             }}
           >
-            Music Management
+            content Management
           </p>
         </div>
 
@@ -320,7 +320,7 @@ export default function Dashboard() {
             }}
           >
             <button
-  onClick={() => router.push("/customers")}
+ onClick={() => window.location.href = "/customers"}
   style={{
     width: "100%",
     padding: "12px",
@@ -334,6 +334,7 @@ export default function Dashboard() {
   }}
 >
   👥 Customers
+
 </button>
             🚪 Logout
           </button>
