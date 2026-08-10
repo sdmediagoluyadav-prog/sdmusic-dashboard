@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import AssignSong from "./AssignSong";
 
 type Customer = {
   id: number;
@@ -38,81 +39,80 @@ export default function CustomersPage() {
   }
 
   async function addCustomer(e: React.FormEvent) {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!customerName.trim() || !labelName.trim()) {
-    alert("Customer Name और Label Name भरना जरूरी है");
-    return;
-  }
+    if (!customerName.trim() || !labelName.trim()) {
+      alert("Customer Name और Label Name भरना जरूरी है");
+      return;
+    }
 
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    console.log("Customer insert शुरू हुआ");
-    const { error } = await supabase.from("customers").insert([
-      {
-        customer_name: customerName.trim(),
-        label_name: labelName.trim(),
-        email: email.trim() || null,
-      },
-    ]);
-console.log("Customer insert का result मिला");
-    if (error) {
+    try {
+      const { error } = await supabase.from("customers").insert([
+        {
+          customer_name: customerName.trim(),
+          label_name: labelName.trim(),
+          email: email.trim() || null,
+        },
+      ]);
+
+      if (error) {
+        console.error("Customer add error:", error);
+        alert(`Customer Add Failed ❌\n${error.message}`);
+        return;
+      }
+
+      alert("Customer Added Successfully ✅");
+
+      setCustomerName("");
+      setLabelName("");
+      setEmail("");
+
+      await fetchCustomers();
+    } catch (error) {
       console.error("Customer add error:", error);
-      alert(`Customer Add Failed ❌\n${error.message}`);
-      return;
+      alert("Customer Add Failed ❌");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkUser() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      await fetchCustomers();
+
+      if (mounted) {
+        setCheckingAuth(false);
+      }
     }
 
-    alert("Customer Added Successfully ✅");
+    checkUser();
 
-    setCustomerName("");
-    setLabelName("");
-    setEmail("");
-
-    await fetchCustomers();
-  } catch (error) {
-    console.error("Customer add error:", error);
-    alert("Customer Add Failed ❌");
-  } finally {
-    setLoading(false);
-  }
-}
-
-useEffect(() => {
-  let mounted = true;
-
-  async function checkUser() {
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/login");
+      }
+    });
 
-    if (!session) {
-      router.replace("/login");
-      return;
-    }
-
-    await fetchCustomers();
-
-    if (mounted) {
-      setCheckingAuth(false);
-    }
-  }
-
-  checkUser();
-
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event, session) => {
-    if (!session) {
-      router.replace("/login");
-    }
-  });
-
-  return () => {
-    mounted = false;
-    subscription.unsubscribe();
-  };
-}, [router]);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
 
   if (checkingAuth) {
     return (
@@ -141,6 +141,7 @@ useEffect(() => {
         padding: "35px",
       }}
     >
+      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -183,6 +184,7 @@ useEffect(() => {
         </button>
       </div>
 
+      {/* Add Customer */}
       <section
         style={{
           background: "#1e293b",
@@ -242,6 +244,7 @@ useEffect(() => {
         </form>
       </section>
 
+      {/* Customer List */}
       <section
         style={{
           background: "#1e293b",
@@ -256,117 +259,159 @@ useEffect(() => {
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            minWidth: "700px",
+            minWidth: "950px",
           }}
         >
           <thead>
             <tr>
-              <th align="left">ID</th>
-              <th align="left">Customer</th>
-              <th align="left">Label</th>
-              <th align="left">Email</th>
-              <th align="left">Created</th>
+              <th align="left" style={tableHeadStyle}>
+                ID
+              </th>
+
+              <th align="left" style={tableHeadStyle}>
+                Customer
+              </th>
+
+              <th align="left" style={tableHeadStyle}>
+                Label
+              </th>
+
+              <th align="left" style={tableHeadStyle}>
+                Email
+              </th>
+
+              <th align="left" style={tableHeadStyle}>
+                Created
+              </th>
+
+              <th align="left" style={tableHeadStyle}>
+                Action
+              </th>
             </tr>
           </thead>
 
           <tbody>
-  {customers.map((customer) => (
-    <tr key={customer.id}>
-      <td style={{ padding: "12px 5px" }}>
-        {customer.id}
-      </td>
+            {customers.map((customer) => (
+              <tr key={customer.id}>
+                <td style={tableCellStyle}>{customer.id}</td>
 
-      <td style={{ padding: "12px 5px" }}>
-        {customer.customer_name}
-      </td>
+                <td style={tableCellStyle}>
+                  {customer.customer_name}
+                </td>
 
-      <td style={{ padding: "12px 5px" }}>
-        🏷️ {customer.label_name}
-      </td>
+                <td style={tableCellStyle}>
+                  🏷️ {customer.label_name}
+                </td>
 
-      <td style={{ padding: "12px 5px" }}>
-        {customer.email || "—"}
-      </td>
+                <td style={tableCellStyle}>
+                  {customer.email || "—"}
+                </td>
 
-      <td style={{ padding: "12px 5px" }}>
-        {customer.created_at
-          ? new Date(
-              customer.created_at
-            ).toLocaleDateString()
-          : "—"}
-      </td>
-      <th
-  align="left"
-  style={{ padding: "12px 5px" }}
->
-  Action
-</th>
+                <td style={tableCellStyle}>
+                  {customer.created_at
+                    ? new Date(
+                        customer.created_at
+                      ).toLocaleDateString()
+                    : "—"}
+                </td>
 
-      <td style={{ padding: "12px 5px" }}>
-        <button
-          onClick={async () => {
-            if (!customer.email) {
-              alert("Customer email नहीं है ❌");
-              return;
-            }
+                {/* Action */}
+                <td
+                  style={{
+                    padding: "12px 5px",
+                    minWidth: "360px",
+                  }}
+                >
+                  {/* Send Invite */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
+                    }}
+                  >
+                    <button
+                      onClick={async () => {
+                        if (!customer.email) {
+                          alert(
+                            "Customer email नहीं है ❌"
+                          );
+                          return;
+                        }
 
-            const confirmInvite = confirm(
-              `${customer.customer_name} को invite भेजना है?`
-            );
+                        const confirmInvite = confirm(
+                          `${customer.customer_name} को invite भेजना है?`
+                        );
 
-            if (!confirmInvite) return;
+                        if (!confirmInvite) return;
 
-            try {
-              const response = await fetch(
-                "/api/customers/invite",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    customerId: customer.id,
-                    email: customer.email,
-                  }),
-                }
-              );
+                        try {
+                          const response = await fetch(
+                            "/api/customers/invite",
+                            {
+                              method: "POST",
+                              headers: {
+                                "Content-Type":
+                                  "application/json",
+                              },
+                              body: JSON.stringify({
+                                customerId:
+                                  customer.id,
+                                email: customer.email,
+                              }),
+                            }
+                          );
 
-              const result = await response.json();
+                          const result =
+                            await response.json();
 
-              if (!response.ok) {
-                throw new Error(
-                  result.error || "Invite failed"
-                );
-              }
+                          if (!response.ok) {
+                            throw new Error(
+                              result.error ||
+                                "Invite failed"
+                            );
+                          }
 
-              alert(
-                "Customer Invite Successfully Sent ✅"
-              );
-            } catch (error) {
-              console.error(error);
-              alert("Invite Failed ❌");
-            }
-          }}
-          style={{
-            background: "#22c55e",
-            color: "white",
-            border: "none",
-            padding: "8px 12px",
-            borderRadius: "6px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          📧 Send Invite
-        </button>
-      </td>
-    </tr>
-  ))}
+                          alert(
+                            "Customer Invite Successfully Sent ✅"
+                          );
+                        } catch (error) {
+                          console.error(error);
+                          alert(
+                            "Invite Failed ❌"
+                          );
+                        }
+                      }}
+                      style={{
+                        background: "#22c55e",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        width: "fit-content",
+                      }}
+                    >
+                      📧 Send Invite
+                    </button>
+
+                    {/* Assign Song */}
+                    <AssignSong
+                      customerId={customer.id}
+                      customerName={
+                        customer.customer_name
+                      }
+                    />
+                  </div>
+                </td>
+              </tr>
+            ))}
 
             {customers.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   style={{
                     padding: "35px",
                     textAlign: "center",
@@ -394,4 +439,14 @@ const inputStyle = {
   borderRadius: "8px",
   outline: "none",
   fontSize: "15px",
+};
+
+const tableHeadStyle = {
+  padding: "12px 5px",
+  borderBottom: "1px solid #475569",
+};
+
+const tableCellStyle = {
+  padding: "12px 5px",
+  borderBottom: "1px solid #334155",
 };
