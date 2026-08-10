@@ -106,7 +106,41 @@ useEffect(() => {
 
     setLoading(false);
   }
+useEffect(() => {
+    let mounted = true;
 
+    async function checkUser() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      await fetchCustomers();
+
+      if (mounted) {
+        setCheckingAuth(false);
+      }
+    }
+
+    checkUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/login");
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
   if (checkingAuth) {
     return (
       <main
