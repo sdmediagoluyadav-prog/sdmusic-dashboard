@@ -38,15 +38,17 @@ export default function CustomersPage() {
   }
 
   async function addCustomer(e: React.FormEvent) {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!customerName.trim() || !labelName.trim()) {
-      alert("Customer Name और Label Name भरना जरूरी है");
-      return;
-    }
+  if (!customerName.trim() || !labelName.trim()) {
+    alert("Customer Name और Label Name भरना जरूरी है");
+    return;
+  }
 
-    setLoading(true);
+  setLoading(true);
 
+  try {
+    console.log("Customer insert शुरू हुआ");
     const { error } = await supabase.from("customers").insert([
       {
         customer_name: customerName.trim(),
@@ -54,6 +56,28 @@ export default function CustomersPage() {
         email: email.trim() || null,
       },
     ]);
+console.log("Customer insert का result मिला");
+    if (error) {
+      console.error("Customer add error:", error);
+      alert(`Customer Add Failed ❌\n${error.message}`);
+      return;
+    }
+
+    alert("Customer Added Successfully ✅");
+
+    setCustomerName("");
+    setLabelName("");
+    setEmail("");
+
+    await fetchCustomers();
+  } catch (error) {
+    console.error("Customer add error:", error);
+    alert("Customer Add Failed ❌");
+  } finally {
+    setLoading(false);
+  }
+}
+
 useEffect(() => {
   let mounted = true;
 
@@ -89,58 +113,7 @@ useEffect(() => {
     subscription.unsubscribe();
   };
 }, [router]);
-    if (error) {
-      console.error("Customer add error:", error);
-      alert("Customer Add Failed ❌");
-      setLoading(false);
-      return;
-    }
 
-    alert("Customer Added Successfully ✅");
-
-    setCustomerName("");
-    setLabelName("");
-    setEmail("");
-
-    await fetchCustomers();
-
-    setLoading(false);
-  }
-useEffect(() => {
-    let mounted = true;
-
-    async function checkUser() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        router.replace("/login");
-        return;
-      }
-
-      await fetchCustomers();
-
-      if (mounted) {
-        setCheckingAuth(false);
-      }
-    }
-
-    checkUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.replace("/login");
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [router]);
   if (checkingAuth) {
     return (
       <main
