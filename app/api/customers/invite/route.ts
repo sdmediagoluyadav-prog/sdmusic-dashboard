@@ -19,6 +19,61 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     );
 
+    // Check whether this email already has an Auth account
+    const { data: usersData, error: usersError } =
+      await supabaseAdmin.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+
+    if (usersError) {
+      console.error("Users fetch error:", usersError);
+
+      return NextResponse.json(
+        {
+          error: usersError.message,
+        },
+        { status: 400 }
+      );
+    }
+
+    const existingUser = usersData.users.find(
+      (user) => user.email?.toLowerCase() === email.toLowerCase()
+    );
+
+    let userId: string;
+
+    // Existing user
+    if (existingUser) {
+      userId = existingUser.id;
+
+      const { error: updateError } = await supabaseAdmin
+        .from("customers")
+        .update({
+          auth_user_id: userId,
+        })
+        .eq("id", customerId);
+
+      if (updateError) {
+        console.error("Customer update error:", updateError);
+
+        return NextResponse.json(
+          {
+            error: updateError.message,
+          },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        existingUser: true,
+        message:
+          "This email is already registered. Customer account has been connected.",
+      });
+    }
+
+    // New user
     const { data: inviteData, error: inviteError } =
       await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
         redirectTo:
@@ -36,10 +91,13 @@ export async function POST(request: Request) {
       );
     }
 
+    userId = inviteData.user.id;
+
+    // Connect Auth user with customer
     const { error: customerError } = await supabaseAdmin
       .from("customers")
       .update({
-        auth_user_id: inviteData.user.id,
+        auth_user_id: userId,
       })
       .eq("id", customerId);
 
@@ -56,6 +114,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      existingUser: false,
       message: "Customer invite sent successfully",
     });
   } catch (error) {
