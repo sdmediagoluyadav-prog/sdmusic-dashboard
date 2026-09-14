@@ -173,6 +173,7 @@ export default function CustomerDashboard() {
             alignItems: "center",
             gap: "20px",
             marginBottom: "30px",
+            flexWrap: "wrap",
           }}
         >
           <div>
@@ -197,20 +198,45 @@ export default function CustomerDashboard() {
             </p>
           </div>
 
-          <button
-            onClick={logout}
+          {/* Header Buttons */}
+          <div
             style={{
-              background: "#ef4444",
-              color: "white",
-              border: "none",
-              padding: "11px 18px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontWeight: "bold",
+              display: "flex",
+              gap: "10px",
+              alignItems: "center",
+              flexWrap: "wrap",
             }}
           >
-            Logout
-          </button>
+            <button
+              onClick={() => router.push("/upload")}
+              style={{
+                background: "#22c55e",
+                color: "white",
+                border: "none",
+                padding: "11px 18px",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              + Upload Song
+            </button>
+
+            <button
+              onClick={logout}
+              style={{
+                background: "#ef4444",
+                color: "white",
+                border: "none",
+                padding: "11px 18px",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* No songs */}
@@ -218,23 +244,95 @@ export default function CustomerDashboard() {
           <div
             style={{
               background: "#1e293b",
-              padding: "35px",
+              padding: "40px",
               borderRadius: "14px",
               color: "#cbd5e1",
+              textAlign: "center",
+              border: "1px solid #334155",
             }}
           >
-            अभी कोई Song उपलब्ध नहीं है।
-          </div>
-        ) : (
-          <>
+            <div
+              style={{
+                fontSize: "50px",
+                marginBottom: "15px",
+              }}
+            >
+              🎵
+            </div>
+
             <h2
               style={{
+                margin: "0 0 10px",
+                color: "white",
+              }}
+            >
+              अभी कोई Song उपलब्ध नहीं है
+            </h2>
+
+            <p
+              style={{
+                color: "#94a3b8",
                 marginBottom: "20px",
               }}
             >
-              🎵 आपके Songs
-            </h2>
+              अपना पहला Song upload करने के लिए नीचे दिए गए button पर
+              click करें।
+            </p>
 
+            <button
+              onClick={() => router.push("/upload")}
+              style={{
+                background: "#22c55e",
+                color: "white",
+                border: "none",
+                padding: "12px 22px",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "15px",
+              }}
+            >
+              + Upload Your First Song
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Songs Heading */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "20px",
+                gap: "15px",
+                flexWrap: "wrap",
+              }}
+            >
+              <h2
+                style={{
+                  margin: 0,
+                }}
+              >
+                🎵 आपके Songs
+              </h2>
+
+              <button
+                onClick={() => router.push("/upload")}
+                style={{
+                  background: "#22c55e",
+                  color: "white",
+                  border: "none",
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                + Upload Song
+              </button>
+            </div>
+
+            {/* Songs Grid */}
             <div
               style={{
                 display: "grid",
@@ -250,6 +348,7 @@ export default function CustomerDashboard() {
                     background: "#1e293b",
                     padding: "18px",
                     borderRadius: "14px",
+                    border: "1px solid #334155",
                   }}
                 >
                   {/* Cover */}

@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [totalArtists, setTotalArtists] = useState(0);
   const [totalAlbums, setTotalAlbums] = useState(0);
   const [recentSongs, setRecentSongs] = useState<any[]>([]);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -28,9 +29,7 @@ export default function Dashboard() {
 
       await loadDashboard();
 
-      if (mounted) {
-        setLoading(false);
-      }
+      if (mounted) setLoading(false);
     }
 
     checkUser();
@@ -38,9 +37,7 @@ export default function Dashboard() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.replace("/login");
-      }
+      if (!session) router.replace("/login");
     });
 
     return () => {
@@ -74,10 +71,7 @@ export default function Dashboard() {
   async function loadDashboard() {
     const { count, error } = await supabase
       .from("songs")
-      .select("*", {
-        count: "exact",
-        head: true,
-      });
+      .select("*", { count: "exact", head: true });
 
     if (error) {
       console.error("Songs count error:", error);
@@ -96,15 +90,10 @@ export default function Dashboard() {
 
     if (data) {
       const artists = new Set(
-        data
-          .map((item: any) => item.artist_name)
-          .filter(Boolean)
+        data.map((item: any) => item.artist_name).filter(Boolean)
       );
-
       const albums = new Set(
-        data
-          .map((item: any) => item.album_name)
-          .filter(Boolean)
+        data.map((item: any) => item.album_name).filter(Boolean)
       );
 
       setTotalArtists(artists.size);
@@ -112,14 +101,8 @@ export default function Dashboard() {
     }
 
     const { data: recent, error: recentError } = await supabase
-  .from("songs")
-  .select(`
-    *,
-    customers (
-      customer_name,
-      label_name
-    )
-  `)
+      .from("songs")
+      .select("*")
       .order("id", { ascending: false })
       .limit(5);
 
@@ -128,25 +111,102 @@ export default function Dashboard() {
       return;
     }
 
-    if (!recent) {
+    if (!recent || recent.length === 0) {
       setRecentSongs([]);
       return;
     }
+
+    // customer_songs is the link between songs and customers.
+    // We load that relation manually so the Customer / Label column works
+    // even though customers is not a direct foreign-key relation on songs.
+    const songIds = recent.map((song: any) => song.id);
+
+    const { data: links, error: linksError } = await supabase
+      .from("customer_songs")
+      .select("song_id, customer_id")
+      .in("song_id", songIds);
+
+    if (linksError) {
+      console.error("Customer-song link error:", linksError);
+    }
+
+    const customerIds = [
+      ...new Set((links || []).map((link: any) => link.customer_id).filter(Boolean)),
+    ];
+
+    let customers: any[] = [];
+
+    if (customerIds.length > 0) {
+      const { data: customerData, error: customerError } = await supabase
+        .from("customers")
+        .select("id, customer_name, label_name")
+        .in("id", customerIds);
+
+      if (customerError) {
+        console.error("Customer data error:", customerError);
+      } else {
+        customers = customerData || [];
+      }
+    }
+
+    const customerMap = new Map(
+      customers.map((customer: any) => [customer.id, customer])
+    );
+
+    const linkMap = new Map(
+      (links || []).map((link: any) => [link.song_id, link.customer_id])
+    );
 
     const songsWithUrls = await Promise.all(
       recent.map(async (song: any) => {
         const coverUrl = await createSignedUrl(song.cover_url);
         const audioUrl = await createSignedUrl(song.audio_url);
 
+        const customerId = linkMap.get(song.id);
+        const customer = customerId ? customerMap.get(customerId) : null;
+
         return {
           ...song,
           display_cover_url: coverUrl,
           display_audio_url: audioUrl,
+          customer,
         };
       })
     );
 
     setRecentSongs(songsWithUrls);
+  }
+
+  async function updateStatus(id: number, status: "Approved" | "Rejected") {
+    const message =
+      status === "Approved"
+        ? "Is song ko Approve karna hai?"
+        : "Is song ko Reject karna hai?";
+
+    if (!confirm(message)) return;
+
+    setUpdatingId(id);
+
+    const { error } = await supabase
+      .from("songs")
+      .update({ status })
+      .eq("id", id);
+
+    setUpdatingId(null);
+
+    if (error) {
+      alert(`Status update failed ❌\n\n${error.message}`);
+      console.error("Status update error:", error);
+      return;
+    }
+
+    alert(
+      status === "Approved"
+        ? "Song Approved Successfully ✅"
+        : "Song Rejected Successfully ❌"
+    );
+
+    await loadDashboard();
   }
 
   async function logout() {
@@ -174,14 +234,25 @@ export default function Dashboard() {
       .eq("id", id);
 
     if (error) {
-      alert("Delete Failed ❌");
+      alert(`Delete Failed ❌\n\n${error.message}`);
       console.error(error);
       return;
     }
 
     alert("Song Deleted Successfully ✅");
-
     await loadDashboard();
+  }
+
+  function statusStyle(status: string) {
+    if (status === "Approved") {
+      return { background: "#14532d", color: "#86efac" };
+    }
+
+    if (status === "Rejected") {
+      return { background: "#7f1d1d", color: "#fca5a5" };
+    }
+
+    return { background: "#78350f", color: "#fbbf24" };
   }
 
   if (loading) {
@@ -227,28 +298,24 @@ export default function Dashboard() {
       >
         <div
           style={{
-            padding: "10px",
+            padding: "5px",
             marginBottom: "30px",
+            textAlign: "center",
           }}
         >
-          <h2
+          <img
+            src="/sd-logo.png"
+            alt="SD Media Entertainment"
             style={{
-              margin: 0,
-              color: "#22c55e",
-              fontSize: "24px",
+              width: "150px",
+              height: "150px",
+              objectFit: "contain",
+              display: "block",
+              margin: "0 auto 8px",
             }}
-          >
-            🎵 SD MUSIC
-          </h2>
-
-          <p
-            style={{
-              marginTop: "6px",
-              color: "#9ca3af",
-              fontSize: "13px",
-            }}
-          >
-            content Management
+          />
+          <p style={{ margin: 0, color: "#9ca3af", fontSize: "13px" }}>
+            Music Content Management
           </p>
         </div>
 
@@ -304,9 +371,26 @@ export default function Dashboard() {
           ⬆️ Upload Song
         </button>
 
+        <button
+          onClick={() => router.push("/customers")}
+          style={{
+            width: "100%",
+            padding: "13px",
+            marginBottom: "10px",
+            background: "#1f2937",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            textAlign: "left",
+            cursor: "pointer",
+          }}
+        >
+          👥 Customers
+        </button>
+
         <div
           style={{
-            marginTop: "40px",
+            marginTop: "25px",
             borderTop: "1px solid #1f2937",
             paddingTop: "20px",
           }}
@@ -325,24 +409,6 @@ export default function Dashboard() {
               fontWeight: "bold",
             }}
           >
-            <button
-  onClick={() => window.location.href = "/customers"}
-  style={{
-    width: "100%",
-    padding: "12px 15px",
-    marginTop: "10px",
-    background: "#1f2937",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    textAlign: "left",
-    fontSize: "15px",
-  }}
->
-  👥 Customers
-
-</button>
             🚪 Logout
           </button>
         </div>
@@ -356,7 +422,6 @@ export default function Dashboard() {
           padding: "35px",
         }}
       >
-        {/* HEADER */}
         <div
           style={{
             display: "flex",
@@ -368,21 +433,8 @@ export default function Dashboard() {
           }}
         >
           <div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "32px",
-              }}
-            >
-              Dashboard
-            </h1>
-
-            <p
-              style={{
-                color: "#9ca3af",
-                marginTop: "8px",
-              }}
-            >
+            <h1 style={{ margin: 0, fontSize: "32px" }}>Dashboard</h1>
+            <p style={{ color: "#9ca3af", marginTop: "8px" }}>
               Welcome back! Manage your music here.
             </p>
           </div>
@@ -407,76 +459,27 @@ export default function Dashboard() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(200px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
             gap: "20px",
           }}
         >
-          <div
-            style={{
-              background: "#1e293b",
-              padding: "25px",
-              borderRadius: "14px",
-              border: "1px solid #334155",
-            }}
-          >
-            <p style={{ color: "#94a3b8", margin: 0 }}>
-              Total Songs
-            </p>
-
-            <h2
-              style={{
-                fontSize: "34px",
-                margin: "10px 0 0",
-                color: "#22c55e",
-              }}
-            >
+          <div style={cardStyle}>
+            <p style={{ color: "#94a3b8", margin: 0 }}>Total Songs</p>
+            <h2 style={{ ...numberStyle, color: "#22c55e" }}>
               {totalSongs}
             </h2>
           </div>
 
-          <div
-            style={{
-              background: "#1e293b",
-              padding: "25px",
-              borderRadius: "14px",
-              border: "1px solid #334155",
-            }}
-          >
-            <p style={{ color: "#94a3b8", margin: 0 }}>
-              Total Artists
-            </p>
-
-            <h2
-              style={{
-                fontSize: "34px",
-                margin: "10px 0 0",
-                color: "#38bdf8",
-              }}
-            >
+          <div style={cardStyle}>
+            <p style={{ color: "#94a3b8", margin: 0 }}>Total Artists</p>
+            <h2 style={{ ...numberStyle, color: "#38bdf8" }}>
               {totalArtists}
             </h2>
           </div>
 
-          <div
-            style={{
-              background: "#1e293b",
-              padding: "25px",
-              borderRadius: "14px",
-              border: "1px solid #334155",
-            }}
-          >
-            <p style={{ color: "#94a3b8", margin: 0 }}>
-              Total Albums
-            </p>
-
-            <h2
-              style={{
-                fontSize: "34px",
-                margin: "10px 0 0",
-                color: "#f59e0b",
-              }}
-            >
+          <div style={cardStyle}>
+            <p style={{ color: "#94a3b8", margin: 0 }}>Total Albums</p>
+            <h2 style={{ ...numberStyle, color: "#f59e0b" }}>
               {totalAlbums}
             </h2>
           </div>
@@ -501,10 +504,7 @@ export default function Dashboard() {
               marginBottom: "20px",
             }}
           >
-            <h2 style={{ margin: 0 }}>
-              🎵 Recent Uploaded Songs
-            </h2>
-
+            <h2 style={{ margin: 0 }}>🎵 Recent Uploaded Songs</h2>
             <button
               onClick={() => router.push("/songs")}
               style={{
@@ -523,179 +523,148 @@ export default function Dashboard() {
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: "850px",
+              minWidth: "1050px",
             }}
           >
             <thead>
-              <tr
-                style={{
-                  borderBottom: "1px solid #334155",
-                  color: "#94a3b8",
-                }}
-              >
-                <th
-                  align="left"
-                  style={{ padding: "12px 8px" }}
-                >
-                  Cover
-                </th>
-
-                <th
-                  align="left"
-                  style={{ padding: "12px 8px" }}
-                >
-                  Song
-                </th>
-
-                <th
-                  align="left"
-                  style={{ padding: "12px 8px" }}
-                >
-                  Artist
-                </th>
-
-                <th
-                  align="left"
-                  style={{ padding: "12px 8px" }}
-                >
-                  Status
-                </th>
-<th
-  align="left"
-  style={{ padding: "12px 8px" }}
->
-  Customer / Label
-</th>
-                <th
-                  align="left"
-                  style={{ padding: "12px 8px" }}
-                >
-                  Play
-                </th>
-
-                <th
-                  align="left"
-                  style={{ padding: "12px 8px" }}
-                >
-                  Action
-                </th>
+              <tr style={{ borderBottom: "1px solid #334155", color: "#94a3b8" }}>
+                <th align="left" style={thStyle}>Cover</th>
+                <th align="left" style={thStyle}>Song</th>
+                <th align="left" style={thStyle}>Artist</th>
+                <th align="left" style={thStyle}>Status</th>
+                <th align="left" style={thStyle}>Customer / Label</th>
+                <th align="left" style={thStyle}>Play</th>
+                <th align="left" style={thStyle}>Approval</th>
+                <th align="left" style={thStyle}>Action</th>
               </tr>
             </thead>
 
             <tbody>
-              {recentSongs.map((song: any) => (
-                <tr
-                  key={song.id}
-                  style={{
-                    borderBottom:
-                      "1px solid #273449",
-                  }}
-                >
-                  <td style={{ padding: "12px 8px" }}>
-                    {song.display_cover_url ? (
-                      <img
-                        src={song.display_cover_url}
-                        alt={
-                          song.song_title ||
-                          "Song Cover"
-                        }
-                        width={55}
-                        height={55}
+              {recentSongs.map((song: any) => {
+                const badge = statusStyle(song.status);
+                const isUpdating = updatingId === song.id;
+
+                return (
+                  <tr key={song.id} style={{ borderBottom: "1px solid #273449" }}>
+                    <td style={tdStyle}>
+                      {song.display_cover_url ? (
+                        <img
+                          src={song.display_cover_url}
+                          alt={song.song_title || "Song Cover"}
+                          width={55}
+                          height={55}
+                          style={{ borderRadius: "8px", objectFit: "cover" }}
+                        />
+                      ) : (
+                        "No Cover"
+                      )}
+                    </td>
+
+                    <td style={tdStyle}>
+                      <strong>{song.song_title}</strong>
+                    </td>
+
+                    <td style={tdStyle}>{song.artist_name}</td>
+
+                    <td style={tdStyle}>
+                      <span
                         style={{
-                          borderRadius: "8px",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      "No Cover"
-                    )}
-                  </td>
-
-                  <td style={{ padding: "12px 8px" }}>
-                    <strong>
-                      {song.song_title}
-                    </strong>
-                  </td>
-
-                  <td style={{ padding: "12px 8px" }}>
-                    {song.artist_name}
-                  </td>
-
-                  <td style={{ padding: "12px 8px" }}>
-                    <span
-                      style={{
-                        background:
-                          song.status === "Pending"
-                            ? "#78350f"
-                            : "#14532d",
-                        color:
-                          song.status === "Pending"
-                            ? "#fbbf24"
-                            : "#86efac",
-                        padding:
-                          "5px 10px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      {song.status}
-                    </span>
-                  </td>
-<td style={{ padding: "10px" }}>
-  {song.customers
-  ? `${song.customers.customer_name} (${song.customers.label_name || "No Label"})`
-  : "No Customer"}
-</td>
-                  <td style={{ padding: "12px 8px" }}>
-                    {song.display_audio_url ? (
-                      <audio
-                        controls
-                        style={{
-                          width: "210px",
+                          ...badge,
+                          padding: "5px 10px",
+                          borderRadius: "20px",
+                          fontSize: "12px",
+                          fontWeight: "bold",
                         }}
                       >
-                        <source
-                          src={
-                            song.display_audio_url
-                          }
-                        />
-                      </audio>
-                    ) : (
-                      "No Audio"
-                    )}
-                  </td>
+                        {song.status || "Pending"}
+                      </span>
+                    </td>
 
-                  <td style={{ padding: "12px 8px" }}>
-                    <button
-                      onClick={() =>
-                        deleteSong(song.id)
-                      }
-                      style={{
-                        background: "#ef4444",
-                        color: "white",
-                        border: "none",
-                        padding:
-                          "7px 12px",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    <td style={tdStyle}>
+                      {song.customer ? (
+                        <div>
+                          <div style={{ fontWeight: "bold" }}>
+                            {song.customer.customer_name}
+                          </div>
+                          <div style={{ color: "#94a3b8", fontSize: "12px" }}>
+                            {song.customer.label_name || "No Label"}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ color: "#fbbf24" }}>No Customer</span>
+                      )}
+                    </td>
+
+                    <td style={tdStyle}>
+                      {song.display_audio_url ? (
+                        <audio controls style={{ width: "210px" }}>
+                          <source src={song.display_audio_url} />
+                        </audio>
+                      ) : (
+                        "No Audio"
+                      )}
+                    </td>
+
+                    <td style={tdStyle}>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => updateStatus(song.id, "Approved")}
+                          disabled={isUpdating}
+                          style={{
+                            background: "#16a34a",
+                            color: "white",
+                            border: "none",
+                            padding: "7px 10px",
+                            borderRadius: "6px",
+                            cursor: isUpdating ? "not-allowed" : "pointer",
+                            opacity: isUpdating ? 0.6 : 1,
+                            fontWeight: "bold",
+                          }}
+                        >
+                          ✓ Approve
+                        </button>
+
+                        <button
+                          onClick={() => updateStatus(song.id, "Rejected")}
+                          disabled={isUpdating}
+                          style={{
+                            background: "#dc2626",
+                            color: "white",
+                            border: "none",
+                            padding: "7px 10px",
+                            borderRadius: "6px",
+                            cursor: isUpdating ? "not-allowed" : "pointer",
+                            opacity: isUpdating ? 0.6 : 1,
+                            fontWeight: "bold",
+                          }}
+                        >
+                          ✕ Reject
+                        </button>
+                      </div>
+                    </td>
+
+                    <td style={tdStyle}>
+                      <button
+                        onClick={() => deleteSong(song.id)}
+                        style={{
+                          background: "#ef4444",
+                          color: "white",
+                          border: "none",
+                          padding: "7px 12px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {recentSongs.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={6}
-                    style={{
-                      padding: "40px",
-                      textAlign: "center",
-                      color: "#94a3b8",
-                    }}
-                  >
+                  <td colSpan={8} style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
                     अभी कोई song upload नहीं हुआ है।
                   </td>
                 </tr>
@@ -707,3 +676,23 @@ export default function Dashboard() {
     </main>
   );
 }
+
+const cardStyle = {
+  background: "#1e293b",
+  padding: "25px",
+  borderRadius: "14px",
+  border: "1px solid #334155",
+};
+
+const numberStyle = {
+  fontSize: "34px",
+  margin: "10px 0 0",
+};
+
+const thStyle = {
+  padding: "12px 8px",
+};
+
+const tdStyle = {
+  padding: "12px 8px",
+};
