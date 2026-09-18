@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabase";
 
 type Customer = {
   id: number;
@@ -19,11 +14,89 @@ type Customer = {
   songCount: number;
 };
 
+function StatCard({
+  title,
+  value,
+  icon,
+}: {
+  title: string;
+  value: number;
+  icon: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "#111827",
+        border: "1px solid #1f2937",
+        borderRadius: "12px",
+        padding: "22px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "24px",
+          marginBottom: "12px",
+        }}
+      >
+        {icon}
+      </div>
+
+      <div
+        style={{
+          color: "#9ca3af",
+          fontSize: "13px",
+          marginBottom: "8px",
+        }}
+      >
+        {title}
+      </div>
+
+      <div
+        style={{
+          fontSize: "28px",
+          fontWeight: "bold",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+const navStyle: React.CSSProperties = {
+  display: "block",
+  padding: "12px",
+  borderRadius: "8px",
+  color: "white",
+  textDecoration: "none",
+  fontSize: "14px",
+};
+
+const thStyle: React.CSSProperties = {
+  padding: "14px 12px",
+  textAlign: "left",
+  fontSize: "13px",
+  color: "#cbd5e1",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "16px 12px",
+  fontSize: "14px",
+  color: "#f8fafc",
+};
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+
+  // ADD CUSTOMER
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [labelName, setLabelName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   async function loadCustomers() {
     try {
@@ -106,20 +179,120 @@ export default function CustomersPage() {
   }, []);
 
   // =========================
+  // ADD CUSTOMER
+  // =========================
+
+  async function createCustomer() {
+    const trimmedCustomerName =
+      customerName.trim();
+
+    const trimmedLabelName =
+      labelName.trim();
+
+    const trimmedEmail =
+      customerEmail.trim().toLowerCase();
+
+    if (!trimmedCustomerName) {
+      alert("Customer Name required hai ❌");
+      return;
+    }
+
+    if (!trimmedEmail) {
+      alert("Customer Email required hai ❌");
+      return;
+    }
+
+    if (!trimmedEmail.includes("@")) {
+      alert("Valid email enter karo ❌");
+      return;
+    }
+
+    try {
+      setCreatingCustomer(true);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        alert(
+          "Session expire ho gaya. Please login again."
+        );
+        return;
+      }
+
+      const response = await fetch(
+        "/api/customers/invite",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            customer_name:
+              trimmedCustomerName,
+            label_name:
+              trimmedLabelName,
+            email: trimmedEmail,
+          }),
+        }
+      );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        alert(
+          result.error ||
+            "Customer create nahi hua ❌"
+        );
+        return;
+      }
+
+      alert(
+        result.message ||
+          "Customer successfully create ho gaya ✅"
+      );
+
+      setCustomerName("");
+      setLabelName("");
+      setCustomerEmail("");
+      setShowAddModal(false);
+
+      await loadCustomers();
+    } catch (error) {
+      console.error(
+        "Create customer error:",
+        error
+      );
+
+      alert(
+        "Customer create karte time error aa gaya ❌"
+      );
+    } finally {
+      setCreatingCustomer(false);
+    }
+  }
+
+  // =========================
   // ACTIVE / INACTIVE
   // =========================
 
   async function toggleCustomer(
     customer: Customer
   ) {
-    const nextStatus = !customer.is_active;
+    const nextStatus =
+      !customer.is_active;
 
     const confirmMessage = nextStatus
       ? `${
-          customer.customer_name || "Customer"
+          customer.customer_name ||
+          "Customer"
         } ko Active karna hai?`
       : `${
-          customer.customer_name || "Customer"
+          customer.customer_name ||
+          "Customer"
         } ko Inactive karna hai?`;
 
     const confirmed =
@@ -148,17 +321,21 @@ export default function CustomersPage() {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
-            customer_id: customer.id,
-            is_active: nextStatus,
+            customer_id:
+              customer.id,
+            is_active:
+              nextStatus,
           }),
         }
       );
 
-      const result = await response.json();
+      const result =
+        await response.json();
 
       if (!response.ok) {
         alert(
@@ -177,7 +354,10 @@ export default function CustomersPage() {
       await loadCustomers();
     } catch (error) {
       console.error(error);
-      alert("Something went wrong ❌");
+
+      alert(
+        "Something went wrong ❌"
+      );
     } finally {
       setUpdatingId(null);
     }
@@ -190,25 +370,30 @@ export default function CustomersPage() {
   async function deleteCustomer(
     customer: Customer
   ) {
-    const firstConfirm = window.confirm(
-      `⚠️ WARNING\n\n` +
-        `Customer: ${
-          customer.customer_name || "-"
-        }\n` +
-        `Email: ${customer.email || "-"}\n\n` +
-        `Kya aap is customer ko permanently delete karna chahte hain?\n\n` +
-        `Customer account aur login permanently delete ho jayega.`
-    );
+    const firstConfirm =
+      window.confirm(
+        `⚠️ WARNING\n\n` +
+          `Customer: ${
+            customer.customer_name ||
+            "-"
+          }\n` +
+          `Email: ${
+            customer.email || "-"
+          }\n\n` +
+          `Kya aap is customer ko permanently delete karna chahte hain?\n\n` +
+          `Customer account, login aur linked files permanently delete ho jayenge.`
+      );
 
     if (!firstConfirm) {
       return;
     }
 
-    const secondConfirm = window.confirm(
-      "⚠️ FINAL CONFIRMATION\n\n" +
-        "Ye action undo nahi kiya ja sakta.\n\n" +
-        "Kya aap DELETE karna chahte hain?"
-    );
+    const secondConfirm =
+      window.confirm(
+        "⚠️ FINAL CONFIRMATION\n\n" +
+          "Ye action undo nahi kiya ja sakta.\n\n" +
+          "Kya aap DELETE karna chahte hain?"
+      );
 
     if (!secondConfirm) {
       return;
@@ -233,16 +418,19 @@ export default function CustomersPage() {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
-            customer_id: customer.id,
+            customer_id:
+              customer.id,
           }),
         }
       );
 
-      const result = await response.json();
+      const result =
+        await response.json();
 
       if (!response.ok) {
         alert(
@@ -253,7 +441,8 @@ export default function CustomersPage() {
       }
 
       alert(
-        "Customer successfully delete ho gaya ✅"
+        result.message ||
+          "Customer successfully delete ho gaya ✅"
       );
 
       await loadCustomers();
@@ -299,18 +488,21 @@ export default function CustomersPage() {
 
   const activeCustomers =
     customers.filter(
-      (customer) => customer.is_active
+      (customer) =>
+        customer.is_active
     ).length;
 
   const inactiveCustomers =
     customers.filter(
-      (customer) => !customer.is_active
+      (customer) =>
+        !customer.is_active
     ).length;
 
   const totalSongs =
     customers.reduce(
       (total, customer) =>
-        total + customer.songCount,
+        total +
+        customer.songCount,
       0
     );
 
@@ -368,7 +560,8 @@ export default function CustomersPage() {
         <nav
           style={{
             display: "flex",
-            flexDirection: "column",
+            flexDirection:
+              "column",
             gap: "8px",
           }}
         >
@@ -404,10 +597,10 @@ export default function CustomersPage() {
           </Link>
 
           <Link
-            href="/customer-dashboard"
+            href="/customers"
             style={navStyle}
           >
-            👤 Customer Dashboard
+            👥 Customer Accounts
           </Link>
 
           <button
@@ -417,6 +610,8 @@ export default function CustomersPage() {
               border: "none",
               cursor: "pointer",
               textAlign: "left",
+              background:
+                "transparent",
             }}
           >
             🔄 Refresh
@@ -425,6 +620,7 @@ export default function CustomersPage() {
           <button
             onClick={async () => {
               await supabase.auth.signOut();
+
               window.location.href =
                 "/login";
             }}
@@ -434,6 +630,8 @@ export default function CustomersPage() {
               cursor: "pointer",
               textAlign: "left",
               color: "#fca5a5",
+              background:
+                "transparent",
             }}
           >
             🚪 Logout
@@ -485,11 +683,31 @@ export default function CustomersPage() {
               distribution customers
             </p>
           </div>
+
+          {/* ADD CUSTOMER BUTTON */}
+
+          <button
+            onClick={() =>
+              setShowAddModal(true)
+            }
+            style={{
+              background:
+                "#2563eb",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              padding:
+                "12px 18px",
+              fontSize: "14px",
+              fontWeight: "bold",
+              cursor: "pointer",
+            }}
+          >
+            ＋ Add Customer
+          </button>
         </div>
 
-        {/* =========================
-            STATS
-        ========================= */}
+        {/* STATS */}
 
         <div
           style={{
@@ -502,19 +720,25 @@ export default function CustomersPage() {
         >
           <StatCard
             title="Total Customers"
-            value={totalCustomers}
+            value={
+              totalCustomers
+            }
             icon="👥"
           />
 
           <StatCard
             title="Active Customers"
-            value={activeCustomers}
+            value={
+              activeCustomers
+            }
             icon="🟢"
           />
 
           <StatCard
             title="Inactive Customers"
-            value={inactiveCustomers}
+            value={
+              inactiveCustomers
+            }
             icon="🔴"
           />
 
@@ -525,9 +749,7 @@ export default function CustomersPage() {
           />
         </div>
 
-        {/* =========================
-            SEARCH
-        ========================= */}
+        {/* SEARCH */}
 
         <div
           style={{
@@ -544,12 +766,15 @@ export default function CustomersPage() {
             placeholder="Search customer, label or email..."
             value={search}
             onChange={(e) =>
-              setSearch(e.target.value)
+              setSearch(
+                e.target.value
+              )
             }
             style={{
               width: "100%",
               padding: "13px",
-              background: "#0f172a",
+              background:
+                "#0f172a",
               border:
                 "1px solid #374151",
               borderRadius: "8px",
@@ -561,9 +786,7 @@ export default function CustomersPage() {
           />
         </div>
 
-        {/* =========================
-            TABLE
-        ========================= */}
+        {/* TABLE */}
 
         <div
           style={{
@@ -579,7 +802,8 @@ export default function CustomersPage() {
               width: "100%",
               borderCollapse:
                 "collapse",
-              minWidth: "1000px",
+              minWidth:
+                "1000px",
             }}
           >
             <thead>
@@ -589,27 +813,39 @@ export default function CustomersPage() {
                     "#1f2937",
                 }}
               >
-                <th style={thStyle}>
+                <th
+                  style={thStyle}
+                >
                   Customer
                 </th>
 
-                <th style={thStyle}>
+                <th
+                  style={thStyle}
+                >
                   Label
                 </th>
 
-                <th style={thStyle}>
+                <th
+                  style={thStyle}
+                >
                   Email
                 </th>
 
-                <th style={thStyle}>
+                <th
+                  style={thStyle}
+                >
                   Songs
                 </th>
 
-                <th style={thStyle}>
+                <th
+                  style={thStyle}
+                >
                   Status
                 </th>
 
-                <th style={thStyle}>
+                <th
+                  style={thStyle}
+                >
                   Actions
                 </th>
               </tr>
@@ -665,7 +901,11 @@ export default function CustomersPage() {
                     >
                       {/* CUSTOMER */}
 
-                      <td style={tdStyle}>
+                      <td
+                        style={
+                          tdStyle
+                        }
+                      >
                         <div
                           style={{
                             fontWeight:
@@ -695,21 +935,33 @@ export default function CustomersPage() {
 
                       {/* LABEL */}
 
-                      <td style={tdStyle}>
+                      <td
+                        style={
+                          tdStyle
+                        }
+                      >
                         {customer.label_name ||
                           "-"}
                       </td>
 
                       {/* EMAIL */}
 
-                      <td style={tdStyle}>
+                      <td
+                        style={
+                          tdStyle
+                        }
+                      >
                         {customer.email ||
                           "-"}
                       </td>
 
                       {/* SONGS */}
 
-                      <td style={tdStyle}>
+                      <td
+                        style={
+                          tdStyle
+                        }
+                      >
                         🎵{" "}
                         {
                           customer.songCount
@@ -718,55 +970,49 @@ export default function CustomersPage() {
 
                       {/* STATUS */}
 
-                      <td style={tdStyle}>
-                        {customer.is_active ? (
-                          <span
-                            style={{
-                              display:
-                                "inline-block",
-                              padding:
-                                "6px 10px",
-                              borderRadius:
-                                "20px",
-                              background:
-                                "rgba(34,197,94,0.15)",
-                              color:
-                                "#4ade80",
-                              fontSize:
-                                "12px",
-                              fontWeight:
-                                "bold",
-                            }}
-                          >
-                            🟢 Active
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              display:
-                                "inline-block",
-                              padding:
-                                "6px 10px",
-                              borderRadius:
-                                "20px",
-                              background:
-                                "rgba(239,68,68,0.15)",
-                              color:
-                                "#f87171",
-                              fontSize:
-                                "12px",
-                              fontWeight:
-                                "bold",
-                            }}
-                          >
-                            🔴 Inactive
-                          </span>
-                        )}
+                      <td
+                        style={
+                          tdStyle
+                        }
+                      >
+                        <span
+                          style={{
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            gap: "6px",
+                            padding:
+                              "7px 10px",
+                            borderRadius:
+                              "999px",
+                            background:
+                              customer.is_active
+                                ? "#064e3b"
+                                : "#7f1d1d",
+                            color:
+                              customer.is_active
+                                ? "#86efac"
+                                : "#fca5a5",
+                            fontSize:
+                              "12px",
+                            fontWeight:
+                              "bold",
+                          }}
+                        >
+                          {customer.is_active
+                            ? "🟢 Active"
+                            : "🔴 Inactive"}
+                        </span>
                       </td>
 
                       {/* ACTIONS */}
 
-                      <td style={tdStyle}>
+                      <td
+                        style={
+                          tdStyle
+                        }
+                      >
                         <div
                           style={{
                             display:
@@ -776,8 +1022,6 @@ export default function CustomersPage() {
                               "wrap",
                           }}
                         >
-                          {/* VIEW */}
-
                           <Link
                             href={`/customers/${customer.id}`}
                             style={{
@@ -788,7 +1032,7 @@ export default function CustomersPage() {
                               textDecoration:
                                 "none",
                               padding:
-                                "8px 12px",
+                                "9px 13px",
                               borderRadius:
                                 "7px",
                               fontSize:
@@ -797,8 +1041,6 @@ export default function CustomersPage() {
                           >
                             👁️ View
                           </Link>
-
-                          {/* ACTIVE / INACTIVE */}
 
                           <button
                             onClick={() =>
@@ -813,39 +1055,26 @@ export default function CustomersPage() {
                             style={{
                               background:
                                 customer.is_active
-                                  ? "#7f1d1d"
+                                  ? "#991b1b"
                                   : "#166534",
                               color:
                                 "white",
                               border:
                                 "none",
                               padding:
-                                "8px 12px",
+                                "9px 13px",
                               borderRadius:
                                 "7px",
                               cursor:
-                                updatingId ===
-                                customer.id
-                                  ? "not-allowed"
-                                  : "pointer",
-                              opacity:
-                                updatingId ===
-                                customer.id
-                                  ? 0.6
-                                  : 1,
+                                "pointer",
                               fontSize:
                                 "13px",
                             }}
                           >
-                            {updatingId ===
-                            customer.id
-                              ? "Updating..."
-                              : customer.is_active
+                            {customer.is_active
                               ? "🔴 Deactivate"
                               : "🟢 Activate"}
                           </button>
-
-                          {/* DELETE */}
 
                           <button
                             onClick={() =>
@@ -859,33 +1088,22 @@ export default function CustomersPage() {
                             }
                             style={{
                               background:
-                                "#991b1b",
+                                "#b91c1c",
                               color:
                                 "white",
                               border:
                                 "none",
                               padding:
-                                "8px 12px",
+                                "9px 13px",
                               borderRadius:
                                 "7px",
                               cursor:
-                                updatingId ===
-                                customer.id
-                                  ? "not-allowed"
-                                  : "pointer",
-                              opacity:
-                                updatingId ===
-                                customer.id
-                                  ? 0.6
-                                  : 1,
+                                "pointer",
                               fontSize:
                                 "13px",
                             }}
                           >
-                            {updatingId ===
-                            customer.id
-                              ? "Deleting..."
-                              : "🗑️ Delete"}
+                            🗑️ Delete
                           </button>
                         </div>
                       </td>
@@ -897,92 +1115,337 @@ export default function CustomersPage() {
           </table>
         </div>
       </main>
+
+      {/* =========================
+          ADD CUSTOMER MODAL
+      ========================= */}
+
+      {showAddModal && (
+        <div
+          style={{
+            position:
+              "fixed",
+            inset: 0,
+            background:
+              "rgba(0,0,0,0.70)",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            padding: "20px",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "500px",
+              background:
+                "#111827",
+              border:
+                "1px solid #374151",
+              borderRadius:
+                "14px",
+              padding: "25px",
+              boxShadow:
+                "0 20px 50px rgba(0,0,0,0.5)",
+            }}
+          >
+            {/* MODAL HEADER */}
+
+            <div
+              style={{
+                display:
+                  "flex",
+                justifyContent:
+                  "space-between",
+                alignItems:
+                  "center",
+                marginBottom:
+                  "20px",
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize:
+                      "22px",
+                  }}
+                >
+                  Add Customer
+                </h2>
+
+                <p
+                  style={{
+                    color:
+                      "#9ca3af",
+                    fontSize:
+                      "13px",
+                    marginTop:
+                      "6px",
+                  }}
+                >
+                  Create customer
+                  account and send
+                  login invitation.
+                </p>
+              </div>
+
+              <button
+                onClick={() =>
+                  setShowAddModal(
+                    false
+                  )
+                }
+                style={{
+                  background:
+                    "transparent",
+                  border:
+                    "none",
+                  color:
+                    "#9ca3af",
+                  fontSize:
+                    "24px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* CUSTOMER NAME */}
+
+            <label
+              style={{
+                display:
+                  "block",
+                color:
+                  "#cbd5e1",
+                fontSize:
+                  "13px",
+                marginBottom:
+                  "7px",
+              }}
+            >
+              Customer Name
+            </label>
+
+            <input
+              type="text"
+              placeholder="Enter customer name"
+              value={
+                customerName
+              }
+              onChange={(e) =>
+                setCustomerName(
+                  e.target.value
+                )
+              }
+              style={{
+                width: "100%",
+                boxSizing:
+                  "border-box",
+                padding:
+                  "12px",
+                marginBottom:
+                  "16px",
+                background:
+                  "#0f172a",
+                border:
+                  "1px solid #374151",
+                borderRadius:
+                  "8px",
+                color:
+                  "white",
+                outline:
+                  "none",
+              }}
+            />
+
+            {/* LABEL NAME */}
+
+            <label
+              style={{
+                display:
+                  "block",
+                color:
+                  "#cbd5e1",
+                fontSize:
+                  "13px",
+                marginBottom:
+                  "7px",
+              }}
+            >
+              Label Name
+            </label>
+
+            <input
+              type="text"
+              placeholder="Enter label name"
+              value={
+                labelName
+              }
+              onChange={(e) =>
+                setLabelName(
+                  e.target.value
+                )
+              }
+              style={{
+                width: "100%",
+                boxSizing:
+                  "border-box",
+                padding:
+                  "12px",
+                marginBottom:
+                  "16px",
+                background:
+                  "#0f172a",
+                border:
+                  "1px solid #374151",
+                borderRadius:
+                  "8px",
+                color:
+                  "white",
+                outline:
+                  "none",
+              }}
+            />
+
+            {/* EMAIL */}
+
+            <label
+              style={{
+                display:
+                  "block",
+                color:
+                  "#cbd5e1",
+                fontSize:
+                  "13px",
+                marginBottom:
+                  "7px",
+              }}
+            >
+              Customer Email
+            </label>
+
+            <input
+              type="email"
+              placeholder="customer@example.com"
+              value={
+                customerEmail
+              }
+              onChange={(e) =>
+                setCustomerEmail(
+                  e.target.value
+                )
+              }
+              style={{
+                width: "100%",
+                boxSizing:
+                  "border-box",
+                padding:
+                  "12px",
+                marginBottom:
+                  "20px",
+                background:
+                  "#0f172a",
+                border:
+                  "1px solid #374151",
+                borderRadius:
+                  "8px",
+                color:
+                  "white",
+                outline:
+                  "none",
+              }}
+            />
+
+            {/* BUTTONS */}
+
+            <div
+              style={{
+                display:
+                  "flex",
+                gap: "10px",
+                justifyContent:
+                  "flex-end",
+              }}
+            >
+              <button
+                onClick={() => {
+                  setShowAddModal(
+                    false
+                  );
+
+                  setCustomerName(
+                    ""
+                  );
+
+                  setLabelName(
+                    ""
+                  );
+
+                  setCustomerEmail(
+                    ""
+                  );
+                }}
+                disabled={
+                  creatingCustomer
+                }
+                style={{
+                  background:
+                    "#374151",
+                  color:
+                    "white",
+                  border:
+                    "none",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "11px 17px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={
+                  createCustomer
+                }
+                disabled={
+                  creatingCustomer
+                }
+                style={{
+                  background:
+                    "#2563eb",
+                  color:
+                    "white",
+                  border:
+                    "none",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "11px 17px",
+                  cursor:
+                    "pointer",
+                  fontWeight:
+                    "bold",
+                }}
+              >
+                {creatingCustomer
+                  ? "Creating..."
+                  : "Create Customer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-// =========================
-// STAT CARD
-// =========================
-
-function StatCard({
-  title,
-  value,
-  icon,
-}: {
-  title: string;
-  value: number;
-  icon: string;
-}) {
-  return (
-    <div
-      style={{
-        background: "#111827",
-        border:
-          "1px solid #1f2937",
-        borderRadius: "12px",
-        padding: "20px",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "24px",
-          marginBottom: "8px",
-        }}
-      >
-        {icon}
-      </div>
-
-      <div
-        style={{
-          color: "#9ca3af",
-          fontSize: "13px",
-        }}
-      >
-        {title}
-      </div>
-
-      <div
-        style={{
-          fontSize: "28px",
-          fontWeight: "bold",
-          marginTop: "5px",
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-// =========================
-// STYLES
-// =========================
-
-const navStyle: React.CSSProperties =
-  {
-    display: "block",
-    padding: "11px 13px",
-    borderRadius: "8px",
-    color: "#d1d5db",
-    textDecoration: "none",
-    background: "transparent",
-    fontSize: "14px",
-  };
-
-const thStyle: React.CSSProperties =
-  {
-    textAlign: "left",
-    padding: "14px",
-    color: "#9ca3af",
-    fontSize: "13px",
-    fontWeight: "600",
-  };
-
-const tdStyle: React.CSSProperties =
-  {
-    padding: "15px 14px",
-    color: "#e5e7eb",
-    fontSize: "14px",
-    verticalAlign: "middle",
-  };
