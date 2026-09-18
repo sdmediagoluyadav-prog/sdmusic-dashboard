@@ -10,6 +10,7 @@ type Customer = {
   label_name: string | null;
   email: string | null;
   auth_user_id: string | null;
+  is_active: boolean | null;
 };
 
 type Song = {
@@ -38,6 +39,8 @@ export default function CustomerDetailsPage() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resettingPassword, setResettingPassword] =
+    useState(false);
+  const [changingStatus, setChangingStatus] =
     useState(false);
 
   const [customerName, setCustomerName] =
@@ -78,7 +81,7 @@ export default function CustomerDetailsPage() {
       } = await supabase
         .from("customers")
         .select(
-          "id, customer_name, label_name, email, auth_user_id"
+          "id, customer_name, label_name, email, auth_user_id, is_active"
         )
         .eq("id", customerId)
         .single();
@@ -111,6 +114,8 @@ export default function CustomerDetailsPage() {
       if (customerSongsError) {
         console.error(customerSongsError);
         setSongs([]);
+        setCoverUrls({});
+        setAudioUrls({});
         return;
       }
 
@@ -121,6 +126,8 @@ export default function CustomerDetailsPage() {
 
       if (songIds.length === 0) {
         setSongs([]);
+        setCoverUrls({});
+        setAudioUrls({});
         return;
       }
 
@@ -149,6 +156,8 @@ export default function CustomerDetailsPage() {
       if (songsError) {
         console.error(songsError);
         setSongs([]);
+        setCoverUrls({});
+        setAudioUrls({});
         return;
       }
 
@@ -294,6 +303,93 @@ export default function CustomerDetailsPage() {
     }
   }
 
+  // Change Active / Inactive
+  async function toggleCustomerStatus() {
+    if (!customer) return;
+
+    const newStatus =
+      customer.is_active === false;
+
+    const confirmMessage = newStatus
+      ? "Kya aap is customer ko Active karna chahte hain?"
+      : "Kya aap is customer ko Inactive karna chahte hain?";
+
+    const confirmed =
+      confirm(confirmMessage);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setChangingStatus(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        alert("Session expired ❌");
+        router.replace("/login");
+        return;
+      }
+
+      const response = await fetch(
+        "/api/customers/toggle-active",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+            Authorization:
+              `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            customer_id: customer.id,
+            is_active: newStatus,
+          }),
+        }
+      );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        alert(
+          result.error ||
+            "Customer status change nahi hua ❌"
+        );
+        return;
+      }
+
+      setCustomer((prev) =>
+        prev
+          ? {
+              ...prev,
+              is_active: newStatus,
+            }
+          : prev
+      );
+
+      alert(
+        newStatus
+          ? "Customer Active ho gaya ✅"
+          : "Customer Inactive ho gaya ✅"
+      );
+    } catch (error) {
+      console.error(
+        "Toggle customer status error:",
+        error
+      );
+
+      alert(
+        "Something went wrong ❌"
+      );
+    } finally {
+      setChangingStatus(false);
+    }
+  }
+
   // Reset customer password
   async function resetCustomerPassword() {
     if (!customer) return;
@@ -378,7 +474,7 @@ export default function CustomerDetailsPage() {
       return;
     }
 
-    loadCustomer();
+    await loadCustomer();
   }
 
   // Reject song
@@ -405,7 +501,7 @@ export default function CustomerDetailsPage() {
       return;
     }
 
-    loadCustomer();
+    await loadCustomer();
   }
 
   // Delete song
@@ -442,7 +538,7 @@ export default function CustomerDetailsPage() {
       return;
     }
 
-    loadCustomer();
+    await loadCustomer();
   }
 
   if (loading) {
@@ -484,6 +580,9 @@ export default function CustomerDetailsPage() {
       (song) =>
         song.status === "Rejected"
     ).length;
+
+  const isActive =
+    customer.is_active !== false;
 
   return (
     <div
@@ -595,10 +694,44 @@ export default function CustomerDetailsPage() {
               ? "Sending..."
               : "🔐 Reset Password"}
           </button>
+
+          <button
+            onClick={
+              toggleCustomerStatus
+            }
+            disabled={
+              changingStatus
+            }
+            style={{
+              background: isActive
+                ? "#dc2626"
+                : "#16a34a",
+              color: "white",
+              border: "none",
+              padding:
+                "12px 20px",
+              borderRadius: "8px",
+              cursor:
+                changingStatus
+                  ? "not-allowed"
+                  : "pointer",
+              fontWeight: "bold",
+              opacity:
+                changingStatus
+                  ? 0.7
+                  : 1,
+            }}
+          >
+            {changingStatus
+              ? "Updating..."
+              : isActive
+              ? "⛔ Make Inactive"
+              : "✅ Make Active"}
+          </button>
         </div>
       </div>
 
-      {/* Customer Info */}
+      {/* Customer Profile */}
       <div
         style={{
           background:
@@ -612,25 +745,31 @@ export default function CustomerDetailsPage() {
       >
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "18px",
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            gap: "15px",
+            flexWrap: "wrap",
+            marginBottom: "20px",
           }}
         >
           <div>
             <p
               style={{
                 color: "#9ca3af",
-                margin: "0 0 7px",
+                margin:
+                  "0 0 6px",
+                fontSize: "13px",
               }}
             >
-              Customer Name
+              CUSTOMER PROFILE
             </p>
 
             <h2
               style={{
                 margin: 0,
+                fontSize: "24px",
               }}
             >
               {customer.customer_name ||
@@ -638,66 +777,76 @@ export default function CustomerDetailsPage() {
             </h2>
           </div>
 
-          <div>
-            <p
-              style={{
-                color: "#9ca3af",
-                margin: "0 0 7px",
-              }}
-            >
-              Label Name
-            </p>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding:
+                "8px 14px",
+              borderRadius:
+                "999px",
+              background: isActive
+                ? "rgba(34,197,94,0.12)"
+                : "rgba(239,68,68,0.12)",
+              border: isActive
+                ? "1px solid rgba(34,197,94,0.35)"
+                : "1px solid rgba(239,68,68,0.35)",
+              color: isActive
+                ? "#4ade80"
+                : "#f87171",
+              fontWeight: "bold",
+              fontSize: "14px",
+            }}
+          >
+            <span>
+              {isActive
+                ? "●"
+                : "●"}
+            </span>
 
-            <h2
-              style={{
-                margin: 0,
-              }}
-            >
-              {customer.label_name ||
-                "-"}
-            </h2>
+            {isActive
+              ? "Active Account"
+              : "Inactive Account"}
           </div>
+        </div>
 
-          <div>
-            <p
-              style={{
-                color: "#9ca3af",
-                margin: "0 0 7px",
-              }}
-            >
-              Email
-            </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: "18px",
+          }}
+        >
+          <InfoBox
+            label="Customer Name"
+            value={
+              customer.customer_name ||
+              "-"
+            }
+          />
 
-            <p
-              style={{
-                margin: 0,
-                wordBreak:
-                  "break-word",
-              }}
-            >
-              {customer.email ||
-                "-"}
-            </p>
-          </div>
+          <InfoBox
+            label="Label Name"
+            value={
+              customer.label_name ||
+              "-"
+            }
+          />
 
-          <div>
-            <p
-              style={{
-                color: "#9ca3af",
-                margin: "0 0 7px",
-              }}
-            >
-              Customer ID
-            </p>
+          <InfoBox
+            label="Email"
+            value={
+              customer.email ||
+              "-"
+            }
+          />
 
-            <p
-              style={{
-                margin: 0,
-              }}
-            >
-              {customer.id}
-            </p>
-          </div>
+          <InfoBox
+            label="Customer ID"
+            value={String(customer.id)}
+          />
         </div>
       </div>
 
@@ -733,13 +882,56 @@ export default function CustomerDetailsPage() {
       </div>
 
       {/* Songs */}
-      <h2
+      <div
         style={{
+          display: "flex",
+          justifyContent:
+            "space-between",
+          alignItems: "center",
+          gap: "15px",
+          flexWrap: "wrap",
           marginBottom: "18px",
         }}
       >
-        Customer Songs
-      </h2>
+        <div>
+          <h2
+            style={{
+              margin: 0,
+            }}
+          >
+            Customer Songs
+          </h2>
+
+          <p
+            style={{
+              margin:
+                "6px 0 0",
+              color:
+                "#9ca3af",
+              fontSize: "14px",
+            }}
+          >
+            Is customer ke sabhi uploaded songs
+          </p>
+        </div>
+
+        <div
+          style={{
+            background:
+              "#1f2937",
+            padding:
+              "8px 14px",
+            borderRadius:
+              "8px",
+            color:
+              "#d1d5db",
+            fontSize:
+              "14px",
+          }}
+        >
+          Total: {songs.length}
+        </div>
+      </div>
 
       {songs.length === 0 ? (
         <div
@@ -751,6 +943,8 @@ export default function CustomerDetailsPage() {
               "12px",
             textAlign: "center",
             color: "#9ca3af",
+            border:
+              "1px solid #1f2937",
           }}
         >
           Is customer ne abhi
@@ -1196,6 +1390,51 @@ export default function CustomerDetailsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        background:
+          "#0b1120",
+        border:
+          "1px solid #1f2937",
+        borderRadius:
+          "10px",
+        padding: "15px",
+      }}
+    >
+      <p
+        style={{
+          color: "#9ca3af",
+          margin:
+            "0 0 7px",
+          fontSize: "13px",
+        }}
+      >
+        {label}
+      </p>
+
+      <p
+        style={{
+          margin: 0,
+          fontWeight:
+            "bold",
+          wordBreak:
+            "break-word",
+        }}
+      >
+        {value}
+      </p>
     </div>
   );
 }
