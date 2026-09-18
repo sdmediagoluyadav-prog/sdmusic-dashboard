@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 type Song = {
@@ -10,1316 +9,1227 @@ type Song = {
   song_title: string | null;
   artist_name: string | null;
   album_name: string | null;
-  singer_name?: string | null;
-  composer?: string | null;
-  lyricist?: string | null;
-  genre?: string | null;
-  language?: string | null;
-  release_date?: string | null;
   cover_url: string | null;
   audio_url: string | null;
   status: string | null;
   rejection_reason: string | null;
 };
 
-type Customer = {
-  id: number;
-  customer_name: string | null;
-  label_name: string | null;
-};
-
 export default function CustomerDashboard() {
   const router = useRouter();
 
-  const [customer, setCustomer] = useState<Customer | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState("Dashboard");
 
-  const loadDashboard = async () => {
+  const [customerName, setCustomerName] = useState("");
+  const [labelName, setLabelName] = useState("");
+
+  // SEARCH + FILTER
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+
+  useEffect(() => {
+    loadCustomerDashboard();
+  }, []);
+
+  async function createSignedUrl(
+    pathOrUrl: string | null,
+    expiresIn = 3600
+  ) {
+    if (!pathOrUrl) return null;
+
+    if (!pathOrUrl.startsWith("http")) {
+      const { data, error } = await supabase.storage
+        .from("songs")
+        .createSignedUrl(pathOrUrl, expiresIn);
+
+      if (error) {
+        console.error("Signed URL error:", error);
+        return null;
+      }
+
+      return data?.signedUrl || null;
+    }
+
+    return pathOrUrl;
+  }
+
+  async function loadCustomerDashboard() {
+    setLoading(true);
+
     try {
-      setLoading(true);
-
-      // Logged-in user
+      // CHECK LOGIN
       const {
         data: { session },
-        error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (sessionError || !session) {
+      if (!session) {
         router.replace("/login");
         return;
       }
 
-      // Find customer account
-      const { data: customerData, error: customerError } =
+      // FIND CUSTOMER
+      const { data: customer, error: customerError } =
         await supabase
           .from("customers")
-          .select("id, customer_name, label_name")
+          .select(
+            "id, customer_name, label_name"
+          )
           .eq("auth_user_id", session.user.id)
           .single();
 
-      if (customerError || !customerData) {
-        alert("Customer account nahi mila ❌");
+      if (customerError || !customer) {
+        console.error(
+          "Customer error:",
+          customerError
+        );
+
+        alert(
+          "Customer account nahi mila ❌"
+        );
+
+        await supabase.auth.signOut();
         router.replace("/login");
         return;
       }
 
-      setCustomer(customerData);
+      setCustomerName(
+        customer.customer_name || ""
+      );
 
-      // Get customer's song IDs
-      const { data: customerSongs, error: customerSongsError } =
-        await supabase
-          .from("customer_songs")
-          .select("song_id")
-          .eq("customer_id", customerData.id);
+      setLabelName(
+        customer.label_name || ""
+      );
+
+      // CUSTOMER SONG LINKS
+      const {
+        data: customerSongs,
+        error: customerSongsError,
+      } = await supabase
+        .from("customer_songs")
+        .select("song_id")
+        .eq("customer_id", customer.id);
 
       if (customerSongsError) {
-        console.error(customerSongsError);
+        console.error(
+          "Customer songs error:",
+          customerSongsError
+        );
+
         setSongs([]);
+        setLoading(false);
         return;
       }
 
-      const songIds = (customerSongs || [])
-        .map((item) => item.song_id)
-        .filter(Boolean);
-
-      if (songIds.length === 0) {
+      if (
+        !customerSongs ||
+        customerSongs.length === 0
+      ) {
         setSongs([]);
+        setLoading(false);
         return;
       }
 
-      // Get songs
-      const { data: songsData, error: songsError } = await supabase
+      const songIds = customerSongs.map(
+        (item) => item.song_id
+      );
+
+      // GET SONGS
+      const {
+        data: songData,
+        error: songError,
+      } = await supabase
         .from("songs")
         .select(
-          `
-          id,
-          song_title,
-          artist_name,
-          album_name,
-          singer_name,
-          composer,
-          lyricist,
-          genre,
-          language,
-          release_date,
-          cover_url,
-          audio_url,
-          status,
-          rejection_reason
-        `
+          "id, song_title, artist_name, album_name, cover_url, audio_url, status, rejection_reason"
         )
         .in("id", songIds)
-        .order("id", { ascending: false });
+        .order("id", {
+          ascending: false,
+        });
 
-      if (songsError) {
-        console.error(songsError);
+      if (songError) {
+        console.error(
+          "Song error:",
+          songError
+        );
+
+        alert(
+          "Songs load nahi ho paaye ❌\n\n" +
+            songError.message
+        );
+
         setSongs([]);
+        setLoading(false);
         return;
       }
 
-      // Create signed URLs
-      const songsWithUrls: Song[] = await Promise.all(
-        (songsData || []).map(async (song) => {
-          let coverUrl = song.cover_url;
-          let audioUrl = song.audio_url;
+      // CREATE SIGNED URLS
+      const songsWithUrls =
+        await Promise.all(
+          (songData || []).map(
+            async (song) => {
+              const coverUrl =
+                await createSignedUrl(
+                  song.cover_url
+                );
 
-          // Cover signed URL
-          if (song.cover_url) {
-            if (song.cover_url.startsWith("http")) {
-              coverUrl = song.cover_url;
-            } else {
-              const { data: coverData } = await supabase.storage
-                .from("songs")
-                .createSignedUrl(song.cover_url, 60 * 60);
+              const audioUrl =
+                await createSignedUrl(
+                  song.audio_url
+                );
 
-              if (coverData?.signedUrl) {
-                coverUrl = coverData.signedUrl;
-              }
+              return {
+                ...song,
+                cover_url: coverUrl,
+                audio_url: audioUrl,
+              };
             }
-          }
-
-          // Audio signed URL
-          if (song.audio_url) {
-            if (song.audio_url.startsWith("http")) {
-              audioUrl = song.audio_url;
-            } else {
-              const { data: audioData } = await supabase.storage
-                .from("songs")
-                .createSignedUrl(song.audio_url, 60 * 60);
-
-              if (audioData?.signedUrl) {
-                audioUrl = audioData.signedUrl;
-              }
-            }
-          }
-
-          return {
-            ...song,
-            cover_url: coverUrl,
-            audio_url: audioUrl,
-          };
-        })
-      );
+          )
+        );
 
       setSongs(songsWithUrls);
     } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
+      console.error(
+        "Dashboard error:",
+        error
+      );
     }
-  };
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+    setLoading(false);
+  }
 
-  const totalSongs = songs.length;
+  async function logout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
 
-  const approvedSongs = songs.filter(
-    (song) => song.status === "Approved"
-  ).length;
-
-  const pendingSongs = songs.filter(
-    (song) => song.status === "Pending"
-  ).length;
-
-  const rejectedSongs = songs.filter(
-    (song) => song.status === "Rejected"
-  ).length;
-
-  const artists = useMemo(() => {
-    return new Set(
-      songs
-        .map((song) => song.artist_name)
-        .filter((artist) => artist && artist.trim() !== "")
-    ).size;
-  }, [songs]);
-
-  const albums = useMemo(() => {
-    return new Set(
-      songs
-        .map((song) => song.album_name)
-        .filter((album) => album && album.trim() !== "")
-    ).size;
-  }, [songs]);
-
-  const getStatusStyle = (status: string | null) => {
+  function getStatusStyle(
+    status: string | null
+  ) {
     if (status === "Approved") {
       return {
-        background: "#dcfce7",
-        color: "#166534",
+        background: "#052e16",
+        color: "#4ade80",
+        border: "1px solid #166534",
       };
     }
 
     if (status === "Rejected") {
       return {
-        background: "#fee2e2",
-        color: "#991b1b",
+        background: "#450a0a",
+        color: "#f87171",
+        border: "1px solid #991b1b",
       };
     }
 
     return {
-      background: "#fef3c7",
-      color: "#92400e",
+      background: "#422006",
+      color: "#fbbf24",
+      border: "1px solid #92400e",
     };
-  };
+  }
 
-  const navItems = [
-    "Dashboard",
-    "My Songs",
-    "Royalty",
-    "Artists",
-    "Albums",
-    "Sub Labels",
-  ];
+  function getStatusText(
+    status: string | null
+  ) {
+    if (status === "Approved")
+      return "🟢 Approved";
+
+    if (status === "Rejected")
+      return "🔴 Rejected";
+
+    return "🟠 Pending";
+  }
+
+  // FILTERED SONGS
+  const filteredSongs = useMemo(() => {
+    const searchText =
+      search.trim().toLowerCase();
+
+    return songs.filter((song) => {
+      const title =
+        song.song_title
+          ?.toLowerCase() || "";
+
+      const artist =
+        song.artist_name
+          ?.toLowerCase() || "";
+
+      const album =
+        song.album_name
+          ?.toLowerCase() || "";
+
+      const matchesSearch =
+        !searchText ||
+        title.includes(searchText) ||
+        artist.includes(searchText) ||
+        album.includes(searchText);
+
+      const currentStatus =
+        song.status || "Pending";
+
+      const matchesStatus =
+        statusFilter === "All" ||
+        currentStatus === statusFilter;
+
+      return (
+        matchesSearch &&
+        matchesStatus
+      );
+    });
+  }, [
+    songs,
+    search,
+    statusFilter,
+  ]);
+
+  // COUNTS
+  const totalSongs = songs.length;
+
+  const approvedSongs = songs.filter(
+    (song) =>
+      song.status === "Approved"
+  ).length;
+
+  const pendingSongs = songs.filter(
+    (song) =>
+      !song.status ||
+      song.status === "Pending"
+  ).length;
+
+  const rejectedSongs = songs.filter(
+    (song) =>
+      song.status === "Rejected"
+  ).length;
+
+  const artists = new Set(
+    songs
+      .map((song) => song.artist_name)
+      .filter(Boolean)
+  ).size;
+
+  const albums = new Set(
+    songs
+      .map((song) => song.album_name)
+      .filter(Boolean)
+  ).size;
 
   if (loading) {
     return (
-      <div
+      <main
         style={{
           minHeight: "100vh",
-          background: "#0f172a",
+          background: "#020617",
           color: "white",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: "18px",
+          fontFamily:
+            "Arial, sans-serif",
+          fontSize: "20px",
         }}
       >
         Loading Customer Dashboard... 🔐
-      </div>
+      </main>
     );
   }
 
   return (
-    <div
+    <main
       style={{
         minHeight: "100vh",
-        background: "#f3f4f6",
-        color: "#111827",
-        display: "flex",
+        background: "#020617",
+        color: "white",
         fontFamily:
-          "Arial, Helvetica, sans-serif",
+          "Arial, sans-serif",
+        display: "flex",
       }}
     >
       {/* SIDEBAR */}
       <aside
         style={{
-          width: "250px",
+          width: "230px",
           minHeight: "100vh",
-          background: "#111827",
-          color: "white",
-          padding: "20px 15px",
-          boxSizing: "border-box",
-          position: "sticky",
+          background: "#0f172a",
+          borderRight:
+            "1px solid #1e293b",
+          padding: "20px 14px",
+          position: "fixed",
+          left: 0,
           top: 0,
-          alignSelf: "flex-start",
+          bottom: 0,
+          overflowY: "auto",
         }}
       >
         {/* LOGO */}
         <div
           style={{
-            padding: "5px",
-            marginBottom: "30px",
             textAlign: "center",
+            marginBottom: "25px",
           }}
         >
           <img
             src="/sd-logo.png"
             alt="SD Media Entertainment"
             style={{
-              width: "150px",
-              height: "150px",
+              width: "125px",
+              height: "125px",
               objectFit: "contain",
-              display: "block",
-              margin: "0 auto 8px",
             }}
           />
 
           <p
             style={{
-              margin: 0,
-              color: "#9ca3af",
-              fontSize: "13px",
+              margin: "5px 0 0",
+              color: "#94a3b8",
+              fontSize: "12px",
             }}
           >
             Music Content Management
           </p>
         </div>
 
-        {/* CUSTOMER INFO */}
-        <div
-          style={{
-            background: "#1f2937",
-            padding: "12px",
-            borderRadius: "10px",
-            marginBottom: "20px",
-          }}
+        {/* DASHBOARD */}
+        <button
+          onClick={() =>
+            window.scrollTo({
+              top: 0,
+              behavior: "smooth",
+            })
+          }
+          style={sideButtonStyle(
+            true
+          )}
         >
-          <div
-            style={{
-              fontSize: "14px",
-              fontWeight: "700",
-              color: "white",
-            }}
-          >
-            {customer?.customer_name || "Customer"}
-          </div>
+          🏠 Dashboard
+        </button>
 
-          <div
-            style={{
-              fontSize: "12px",
-              color: "#9ca3af",
-              marginTop: "3px",
-            }}
-          >
-            {customer?.label_name || "Label"}
-          </div>
-        </div>
+        {/* MY SONGS */}
+        <button
+          onClick={() =>
+            window.scrollTo({
+              top: 450,
+              behavior: "smooth",
+            })
+          }
+          style={sideButtonStyle(
+            false
+          )}
+        >
+          🎵 My Songs
+        </button>
 
-        {/* NAVIGATION */}
-        <div>
-          {navItems.map((item) => {
-            const active = activeSection === item;
-
-            return (
-              <button
-                key={item}
-                onClick={() => setActiveSection(item)}
-                style={{
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "12px 14px",
-                  marginBottom: "6px",
-                  border: "none",
-                  borderRadius: "8px",
-                  background: active
-                    ? "#2563eb"
-                    : "transparent",
-                  color: active
-                    ? "white"
-                    : "#d1d5db",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: active ? "700" : "500",
-                }}
-              >
-                {item === "Dashboard" && "🏠 "}
-                {item === "My Songs" && "🎵 "}
-                {item === "Royalty" && "💰 "}
-                {item === "Artists" && "🎤 "}
-                {item === "Albums" && "💿 "}
-                {item === "Sub Labels" && "🏷️ "}
-                {item}
-              </button>
+        {/* ARTISTS */}
+        <button
+          onClick={() => {
+            alert(
+              `Total Artists: ${artists}`
             );
-          })}
-        </div>
+          }}
+          style={sideButtonStyle(
+            false
+          )}
+        >
+          🎤 Artists
+        </button>
+
+        {/* ALBUMS */}
+        <button
+          onClick={() => {
+            alert(
+              `Total Albums: ${albums}`
+            );
+          }}
+          style={sideButtonStyle(
+            false
+          )}
+        >
+          💿 Albums
+        </button>
+
+        {/* ROYALTY */}
+        <button
+          onClick={() => {
+            alert(
+              "Royalty section abhi setup nahi hua hai."
+            );
+          }}
+          style={sideButtonStyle(
+            false
+          )}
+        >
+          💰 Royalty
+        </button>
+
+        {/* SUB LABELS */}
+        <button
+          onClick={() => {
+            alert(
+              "Sub Labels section abhi setup nahi hua hai."
+            );
+          }}
+          style={sideButtonStyle(
+            false
+          )}
+        >
+          🏷️ Sub Labels
+        </button>
 
         {/* UPLOAD */}
-        <Link
-          href="/upload"
+        <button
+          onClick={() =>
+            router.push("/upload")
+          }
           style={{
-            display: "block",
-            textDecoration: "none",
-            textAlign: "center",
-            background: "#16a34a",
+            ...sideButtonStyle(
+              false
+            ),
+            background: "#2563eb",
             color: "white",
-            padding: "12px",
-            borderRadius: "8px",
-            marginTop: "20px",
-            fontSize: "14px",
-            fontWeight: "700",
+            fontWeight: "bold",
           }}
         >
           ⬆️ Upload Song
-        </Link>
+        </button>
 
         {/* LOGOUT */}
-        <button
-          onClick={async () => {
-            await supabase.auth.signOut();
-            router.replace("/login");
-          }}
+        <div
           style={{
-            width: "100%",
-            marginTop: "12px",
-            padding: "11px",
-            border: "1px solid #374151",
-            borderRadius: "8px",
-            background: "transparent",
-            color: "#fca5a5",
-            cursor: "pointer",
-            fontSize: "14px",
+            marginTop: "25px",
+            paddingTop: "20px",
+            borderTop:
+              "1px solid #1e293b",
           }}
         >
-          🚪 Logout
-        </button>
+          <button
+            onClick={logout}
+            style={{
+              width: "100%",
+              padding: "12px",
+              background: "#dc2626",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              textAlign: "left",
+              fontWeight: "bold",
+            }}
+          >
+            🚪 Logout
+          </button>
+        </div>
       </aside>
 
       {/* MAIN CONTENT */}
-      <main
+      <section
         style={{
-          flex: 1,
+          marginLeft: "230px",
+          width:
+            "calc(100% - 230px)",
           padding: "30px",
-          minWidth: 0,
         }}
       >
         {/* HEADER */}
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "center",
-            gap: "15px",
-            marginBottom: "25px",
+            gap: "20px",
             flexWrap: "wrap",
+            marginBottom: "30px",
           }}
         >
           <div>
             <h1
               style={{
                 margin: 0,
-                fontSize: "28px",
-                fontWeight: "800",
+                fontSize: "32px",
               }}
             >
-              {activeSection}
+              Customer Dashboard
             </h1>
 
             <p
               style={{
-                margin: "6px 0 0",
-                color: "#6b7280",
-                fontSize: "14px",
+                color: "#94a3b8",
+                margin:
+                  "8px 0 0",
               }}
             >
               Welcome,{" "}
-              <strong>
-                {customer?.customer_name || "Customer"}
-              </strong>
+              {customerName ||
+                "Customer"}
             </p>
+
+            {labelName && (
+              <p
+                style={{
+                  color: "#64748b",
+                  margin:
+                    "5px 0 0",
+                }}
+              >
+                Label: {labelName}
+              </p>
+            )}
           </div>
 
-          <Link
-            href="/upload"
+          <button
+            onClick={() =>
+              router.push("/upload")
+            }
             style={{
               background: "#2563eb",
               color: "white",
-              textDecoration: "none",
-              padding: "11px 18px",
+              border: "none",
+              padding:
+                "12px 18px",
               borderRadius: "8px",
-              fontWeight: "700",
-              fontSize: "14px",
+              cursor: "pointer",
+              fontWeight: "bold",
             }}
           >
-            + Upload New Song
-          </Link>
+            + Upload Song
+          </button>
         </div>
 
-        {/* DASHBOARD */}
-        {activeSection === "Dashboard" && (
-          <>
-            {/* STATS */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "16px",
-                marginBottom: "25px",
-              }}
-            >
-              <StatCard
-                title="Total Songs"
-                value={totalSongs}
-                icon="🎵"
-              />
-
-              <StatCard
-                title="Approved Songs"
-                value={approvedSongs}
-                icon="✅"
-              />
-
-              <StatCard
-                title="Pending Songs"
-                value={pendingSongs}
-                icon="⏳"
-              />
-
-              <StatCard
-                title="Rejected Songs"
-                value={rejectedSongs}
-                icon="❌"
-              />
-
-              <StatCard
-                title="Artists"
-                value={artists}
-                icon="🎤"
-              />
-
-              <StatCard
-                title="Albums"
-                value={albums}
-                icon="💿"
-              />
-
-              <StatCard
-                title="Royalty"
-                value="₹0.00"
-                icon="💰"
-              />
-
-              <StatCard
-                title="Sub Labels"
-                value="0"
-                icon="🏷️"
-              />
-            </div>
-
-            {/* QUICK ACTIONS */}
-            <div
-              style={{
-                background: "white",
-                borderRadius: "12px",
-                padding: "20px",
-                marginBottom: "25px",
-                border: "1px solid #e5e7eb",
-              }}
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                  fontSize: "19px",
-                }}
-              >
-                Quick Actions
-              </h2>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <Link
-                  href="/upload"
-                  style={{
-                    background: "#2563eb",
-                    color: "white",
-                    textDecoration: "none",
-                    padding: "11px 16px",
-                    borderRadius: "8px",
-                    fontSize: "14px",
-                    fontWeight: "700",
-                  }}
-                >
-                  🎵 Upload Song
-                </Link>
-
-                <button
-                  onClick={() => setActiveSection("My Songs")}
-                  style={{
-                    background: "#111827",
-                    color: "white",
-                    border: "none",
-                    padding: "11px 16px",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "700",
-                  }}
-                >
-                  📋 My Songs
-                </button>
-
-                <button
-                  onClick={loadDashboard}
-                  style={{
-                    background: "#f3f4f6",
-                    color: "#111827",
-                    border: "1px solid #d1d5db",
-                    padding: "11px 16px",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "700",
-                  }}
-                >
-                  🔄 Refresh
-                </button>
-              </div>
-            </div>
-
-            {/* RECENT SONGS */}
-            <section
-              style={{
-                background: "white",
-                borderRadius: "12px",
-                padding: "20px",
-                border: "1px solid #e5e7eb",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "18px",
-                }}
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                    fontSize: "19px",
-                  }}
-                >
-                  Recent Songs
-                </h2>
-
-                <button
-                  onClick={() => setActiveSection("My Songs")}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "#2563eb",
-                    cursor: "pointer",
-                    fontWeight: "700",
-                  }}
-                >
-                  View All →
-                </button>
-              </div>
-
-              {songs.length === 0 ? (
-                <EmptySongs />
-              ) : (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(260px, 1fr))",
-                    gap: "16px",
-                  }}
-                >
-                  {songs.slice(0, 6).map((song) => (
-                    <SongCard
-                      key={song.id}
-                      song={song}
-                      getStatusStyle={getStatusStyle}
-                      router={router}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
-        )}
-
-        {/* MY SONGS */}
-        {activeSection === "My Songs" && (
-          <section
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "20px",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "20px",
-                flexWrap: "wrap",
-                gap: "10px",
-              }}
-            >
-              <div>
-                <h2
-                  style={{
-                    margin: 0,
-                    fontSize: "21px",
-                  }}
-                >
-                  My Songs
-                </h2>
-
-                <p
-                  style={{
-                    color: "#6b7280",
-                    margin: "5px 0 0",
-                    fontSize: "13px",
-                  }}
-                >
-                  Aapke account ke saare uploaded songs
-                </p>
-              </div>
-
-              <Link
-                href="/upload"
-                style={{
-                  background: "#16a34a",
-                  color: "white",
-                  textDecoration: "none",
-                  padding: "10px 15px",
-                  borderRadius: "8px",
-                  fontWeight: "700",
-                  fontSize: "14px",
-                }}
-              >
-                + Upload Song
-              </Link>
-            </div>
-
-            {songs.length === 0 ? (
-              <EmptySongs />
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(280px, 1fr))",
-                  gap: "18px",
-                }}
-              >
-                {songs.map((song) => (
-                  <SongCard
-                    key={song.id}
-                    song={song}
-                    getStatusStyle={getStatusStyle}
-                    router={router}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* ROYALTY */}
-        {activeSection === "Royalty" && (
-          <section
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "30px",
-              border: "1px solid #e5e7eb",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: "55px" }}>💰</div>
-
-            <h2>Royalty</h2>
-
-            <p
-              style={{
-                color: "#6b7280",
-              }}
-            >
-              Royalty section abhi setup nahi hua hai.
-            </p>
-
-            <div
-              style={{
-                margin: "20px auto",
-                maxWidth: "300px",
-                background: "#f9fafb",
-                padding: "20px",
-                borderRadius: "12px",
-              }}
-            >
-              <div
-                style={{
-                  color: "#6b7280",
-                  fontSize: "13px",
-                }}
-              >
-                Total Royalty
-              </div>
-
-              <div
-                style={{
-                  fontSize: "30px",
-                  fontWeight: "800",
-                  marginTop: "5px",
-                }}
-              >
-                ₹0.00
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* ARTISTS */}
-        {activeSection === "Artists" && (
-          <section
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "20px",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            <h2
-              style={{
-                marginTop: 0,
-              }}
-            >
-              Artists
-            </h2>
-
-            {artists === 0 ? (
-              <EmptySongs />
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(200px, 1fr))",
-                  gap: "15px",
-                }}
-              >
-                {Array.from(
-                  new Set(
-                    songs
-                      .map((song) => song.artist_name)
-                      .filter(Boolean)
-                  )
-                ).map((artist) => (
-                  <div
-                    key={artist}
-                    style={{
-                      padding: "18px",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "10px",
-                      background: "#fafafa",
-                    }}
-                  >
-                    <div style={{ fontSize: "25px" }}>🎤</div>
-
-                    <div
-                      style={{
-                        marginTop: "8px",
-                        fontWeight: "700",
-                      }}
-                    >
-                      {artist}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* ALBUMS */}
-        {activeSection === "Albums" && (
-          <section
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "20px",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            <h2
-              style={{
-                marginTop: 0,
-              }}
-            >
-              Albums
-            </h2>
-
-            {albums === 0 ? (
-              <EmptySongs />
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "15px",
-                }}
-              >
-                {Array.from(
-                  new Set(
-                    songs
-                      .map((song) => song.album_name)
-                      .filter(Boolean)
-                  )
-                ).map((album) => (
-                  <div
-                    key={album}
-                    style={{
-                      padding: "20px",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "10px",
-                      background: "#fafafa",
-                    }}
-                  >
-                    <div style={{ fontSize: "28px" }}>💿</div>
-
-                    <div
-                      style={{
-                        marginTop: "10px",
-                        fontWeight: "700",
-                      }}
-                    >
-                      {album}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* SUB LABELS */}
-        {activeSection === "Sub Labels" && (
-          <section
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "30px",
-              border: "1px solid #e5e7eb",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: "55px" }}>🏷️</div>
-
-            <h2>Sub Labels</h2>
-
-            <p
-              style={{
-                color: "#6b7280",
-              }}
-            >
-              Sub Label management feature abhi setup nahi hua hai.
-            </p>
-          </section>
-        )}
-      </main>
-    </div>
-  );
-}
-
-/* =========================
-   STAT CARD
-========================= */
-
-function StatCard({
-  title,
-  value,
-  icon,
-}: {
-  title: string;
-  value: string | number;
-  icon: string;
-}) {
-  return (
-    <div
-      style={{
-        background: "white",
-        borderRadius: "12px",
-        padding: "18px",
-        border: "1px solid #e5e7eb",
-        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+        {/* STATS */}
         <div
           style={{
-            color: "#6b7280",
-            fontSize: "13px",
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(160px, 1fr))",
+            gap: "15px",
+            marginBottom: "30px",
           }}
         >
-          {title}
-        </div>
-
-        <div
-          style={{
-            fontSize: "22px",
-          }}
-        >
-          {icon}
-        </div>
-      </div>
-
-      <div
-        style={{
-          fontSize: "26px",
-          fontWeight: "800",
-          marginTop: "10px",
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* =========================
-   EMPTY SONGS
-========================= */
-
-function EmptySongs() {
-  return (
-    <div
-      style={{
-        textAlign: "center",
-        padding: "50px 20px",
-        color: "#6b7280",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "50px",
-          marginBottom: "10px",
-        }}
-      >
-        🎵
-      </div>
-
-      <h3
-        style={{
-          color: "#111827",
-          margin: "0 0 8px",
-        }}
-      >
-        Abhi koi song nahi hai
-      </h3>
-
-      <p
-        style={{
-          margin: 0,
-        }}
-      >
-        Apna pehla song upload kijiye.
-      </p>
-
-      <Link
-        href="/upload"
-        style={{
-          display: "inline-block",
-          marginTop: "18px",
-          background: "#2563eb",
-          color: "white",
-          textDecoration: "none",
-          padding: "10px 18px",
-          borderRadius: "8px",
-          fontWeight: "700",
-        }}
-      >
-        Upload Song
-      </Link>
-    </div>
-  );
-}
-
-/* =========================
-   SONG CARD
-========================= */
-
-function SongCard({
-  song,
-  getStatusStyle,
-  router,
-}: {
-  song: Song;
-  getStatusStyle: (status: string | null) => {
-    background: string;
-    color: string;
-  };
-  router: ReturnType<typeof useRouter>;
-}) {
-  const statusStyle = getStatusStyle(song.status);
-
-  return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: "12px",
-        overflow: "hidden",
-        background: "white",
-      }}
-    >
-      {/* COVER */}
-      <div
-        style={{
-          width: "100%",
-          height: "220px",
-          background: "#f3f4f6",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {song.cover_url ? (
-          <img
-            src={song.cover_url}
-            alt={song.song_title ?? "Song cover"}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
+          <StatCard
+            title="Total Songs"
+            value={totalSongs}
           />
-        ) : (
-          <div
-            style={{
-              fontSize: "55px",
-            }}
-          >
-            🎵
-          </div>
-        )}
-      </div>
 
-      {/* CONTENT */}
-      <div
-        style={{
-          padding: "16px",
-        }}
-      >
+          <StatCard
+            title="Approved"
+            value={approvedSongs}
+            valueColor="#4ade80"
+          />
+
+          <StatCard
+            title="Pending"
+            value={pendingSongs}
+            valueColor="#fbbf24"
+          />
+
+          <StatCard
+            title="Rejected"
+            value={rejectedSongs}
+            valueColor="#f87171"
+          />
+
+          <StatCard
+            title="Artists"
+            value={artists}
+          />
+
+          <StatCard
+            title="Albums"
+            value={albums}
+          />
+        </div>
+
+        {/* MY SONGS HEADER */}
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: "10px",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "15px",
+            marginBottom: "15px",
           }}
         >
-          <div
-            style={{
-              minWidth: 0,
-            }}
-          >
-            <h3
+          <div>
+            <h2
               style={{
                 margin: 0,
-                fontSize: "17px",
-                fontWeight: "800",
-                wordBreak: "break-word",
+                fontSize: "24px",
               }}
             >
-              {song.song_title || "Untitled Song"}
-            </h3>
+              My Songs
+            </h2>
 
             <p
               style={{
-                margin: "5px 0 0",
-                color: "#6b7280",
+                color: "#64748b",
+                margin:
+                  "5px 0 0",
                 fontSize: "13px",
               }}
             >
-              {song.artist_name || "Unknown Artist"}
+              Showing{" "}
+              {filteredSongs.length}{" "}
+              of {songs.length} songs
             </p>
           </div>
-
-          <span
-            style={{
-              ...statusStyle,
-              padding: "5px 9px",
-              borderRadius: "999px",
-              fontSize: "11px",
-              fontWeight: "800",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {song.status || "Pending"}
-          </span>
         </div>
 
-        {/* ALBUM */}
-        {song.album_name && (
-          <div
-            style={{
-              marginTop: "10px",
-              fontSize: "13px",
-              color: "#4b5563",
-            }}
-          >
-            💿 {song.album_name}
-          </div>
-        )}
-
-        {/* EXTRA INFO */}
+        {/* SEARCH + FILTER */}
         <div
           style={{
-            marginTop: "12px",
-            display: "grid",
-            gap: "5px",
-            fontSize: "12px",
-            color: "#6b7280",
+            background: "#0f172a",
+            border:
+              "1px solid #1e293b",
+            borderRadius: "12px",
+            padding: "15px",
+            marginBottom: "25px",
+            display: "flex",
+            gap: "12px",
+            flexWrap: "wrap",
           }}
         >
-          {song.singer_name && (
-            <div>
-              <strong>Singer:</strong> {song.singer_name}
-            </div>
-          )}
-
-          {song.genre && (
-            <div>
-              <strong>Genre:</strong> {song.genre}
-            </div>
-          )}
-
-          {song.language && (
-            <div>
-              <strong>Language:</strong> {song.language}
-            </div>
-          )}
-
-          {song.release_date && (
-            <div>
-              <strong>Release Date:</strong>{" "}
-              {song.release_date}
-            </div>
-          )}
-        </div>
-
-        {/* REJECTION REASON */}
-        {song.status === "Rejected" &&
-          song.rejection_reason && (
-            <div
-              style={{
-                marginTop: "14px",
-                padding: "12px",
-                background: "#fef2f2",
-                border: "1px solid #fecaca",
-                borderRadius: "8px",
-                color: "#991b1b",
-                fontSize: "13px",
-              }}
-            >
-              <strong>Rejection Reason:</strong>
-
-              <div
-                style={{
-                  marginTop: "4px",
-                }}
-              >
-                {song.rejection_reason}
-              </div>
-            </div>
-          )}
-
-        {/* AUDIO */}
-        {song.audio_url && (
+          {/* SEARCH */}
           <div
             style={{
-              marginTop: "14px",
+              flex: 1,
+              minWidth: "250px",
             }}
           >
-            <audio
-              controls
-              src={song.audio_url}
+            <input
+              type="text"
+              placeholder="🔎 Search song, artist or album..."
+              value={search}
+              onChange={(e) =>
+                setSearch(
+                  e.target.value
+                )
+              }
               style={{
                 width: "100%",
-                height: "38px",
+                boxSizing:
+                  "border-box",
+                background:
+                  "#020617",
+                color: "white",
+                border:
+                  "1px solid #334155",
+                borderRadius: "8px",
+                padding:
+                  "12px 14px",
+                outline: "none",
+                fontSize: "14px",
               }}
             />
           </div>
-        )}
 
-        {/* REJECTED EDIT BUTTON */}
-        {song.status === "Rejected" && (
-          <button
-            onClick={() =>
-              router.push(
-                `/customer-dashboard/edit/${song.id}`
+          {/* STATUS FILTER */}
+          <select
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(
+                e.target.value
               )
             }
             style={{
-              width: "100%",
-              marginTop: "14px",
-              padding: "10px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#dc2626",
+              background:
+                "#020617",
               color: "white",
+              border:
+                "1px solid #334155",
+              borderRadius: "8px",
+              padding:
+                "12px 14px",
+              minWidth: "160px",
               cursor: "pointer",
-              fontWeight: "700",
-              fontSize: "13px",
             }}
           >
-            ✏️ Edit & Resubmit
-          </button>
+            <option value="All">
+              All Status
+            </option>
+
+            <option value="Approved">
+              Approved
+            </option>
+
+            <option value="Pending">
+              Pending
+            </option>
+
+            <option value="Rejected">
+              Rejected
+            </option>
+          </select>
+
+          {/* CLEAR */}
+          {(search ||
+            statusFilter !==
+              "All") && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setStatusFilter(
+                  "All"
+                );
+              }}
+              style={{
+                background:
+                  "#334155",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                padding:
+                  "12px 16px",
+                cursor: "pointer",
+                fontWeight:
+                  "600",
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* NO SONG */}
+        {songs.length === 0 ? (
+          <div
+            style={{
+              background: "#0f172a",
+              border:
+                "1px solid #1e293b",
+              borderRadius: "12px",
+              padding:
+                "50px 20px",
+              textAlign: "center",
+            }}
+          >
+            <h2>
+              No Songs Found
+            </h2>
+
+            <p
+              style={{
+                color: "#94a3b8",
+              }}
+            >
+              Abhi aapke account
+              me koi song
+              available nahi hai.
+            </p>
+
+            <button
+              onClick={() =>
+                router.push(
+                  "/upload"
+                )
+              }
+              style={{
+                background:
+                  "#2563eb",
+                color: "white",
+                border: "none",
+                borderRadius:
+                  "8px",
+                padding:
+                  "11px 20px",
+                cursor: "pointer",
+                fontWeight:
+                  "600",
+              }}
+            >
+              Upload Your First Song
+            </button>
+          </div>
+        ) : filteredSongs.length ===
+          0 ? (
+          <div
+            style={{
+              background: "#0f172a",
+              border:
+                "1px solid #1e293b",
+              borderRadius: "12px",
+              padding:
+                "50px 20px",
+              textAlign: "center",
+            }}
+          >
+            <h2>
+              No Matching Songs
+            </h2>
+
+            <p
+              style={{
+                color: "#94a3b8",
+              }}
+            >
+              Search ya status
+              filter change karke
+              dekhiye.
+            </p>
+
+            <button
+              onClick={() => {
+                setSearch("");
+                setStatusFilter(
+                  "All"
+                );
+              }}
+              style={{
+                background:
+                  "#334155",
+                color: "white",
+                border: "none",
+                borderRadius:
+                  "8px",
+                padding:
+                  "10px 18px",
+                cursor: "pointer",
+              }}
+            >
+              Clear Filter
+            </button>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: "20px",
+            }}
+          >
+            {filteredSongs.map(
+              (song) => (
+                <div
+                  key={song.id}
+                  style={{
+                    background:
+                      "#0f172a",
+                    border:
+                      "1px solid #1e293b",
+                    borderRadius:
+                      "14px",
+                    overflow:
+                      "hidden",
+                  }}
+                >
+                  {/* COVER */}
+                  <div
+                    style={{
+                      width: "100%",
+                      aspectRatio:
+                        "1 / 1",
+                      background:
+                        "#020617",
+                    }}
+                  >
+                    {song.cover_url ? (
+                      <img
+                        src={
+                          song.cover_url
+                        }
+                        alt={
+                          song.song_title ||
+                          "Song Cover"
+                        }
+                        style={{
+                          width:
+                            "100%",
+                          height:
+                            "100%",
+                          objectFit:
+                            "cover",
+                          display:
+                            "block",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          height:
+                            "100%",
+                          display:
+                            "flex",
+                          alignItems:
+                            "center",
+                          justifyContent:
+                            "center",
+                          color:
+                            "#64748b",
+                        }}
+                      >
+                        No Cover
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SONG CONTENT */}
+                  <div
+                    style={{
+                      padding:
+                        "16px",
+                    }}
+                  >
+                    <h3
+                      style={{
+                        margin:
+                          "0 0 7px",
+                        fontSize:
+                          "18px",
+                      }}
+                    >
+                      {song.song_title ||
+                        "Untitled Song"}
+                    </h3>
+
+                    <p
+                      style={{
+                        margin:
+                          "0 0 6px",
+                        color:
+                          "#94a3b8",
+                      }}
+                    >
+                      Artist:{" "}
+                      {song.artist_name ||
+                        "Unknown"}
+                    </p>
+
+                    {song.album_name && (
+                      <p
+                        style={{
+                          margin:
+                            "0 0 12px",
+                          color:
+                            "#64748b",
+                          fontSize:
+                            "13px",
+                        }}
+                      >
+                        Album:{" "}
+                        {
+                          song.album_name
+                        }
+                      </p>
+                    )}
+
+                    {/* STATUS */}
+                    <div
+                      style={{
+                        marginBottom:
+                          "12px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          ...getStatusStyle(
+                            song.status
+                          ),
+                          display:
+                            "inline-block",
+                          borderRadius:
+                            "999px",
+                          padding:
+                            "6px 10px",
+                          fontSize:
+                            "12px",
+                          fontWeight:
+                            "600",
+                        }}
+                      >
+                        {getStatusText(
+                          song.status
+                        )}
+                      </span>
+                    </div>
+
+                    {/* REJECTION REASON */}
+                    {song.status ===
+                      "Rejected" &&
+                      song.rejection_reason && (
+                        <div
+                          style={{
+                            background:
+                              "#1c0a0a",
+                            border:
+                              "1px solid #7f1d1d",
+                            borderRadius:
+                              "8px",
+                            padding:
+                              "12px",
+                            marginBottom:
+                              "14px",
+                          }}
+                        >
+                          <p
+                            style={{
+                              margin:
+                                "0 0 5px",
+                              color:
+                                "#fca5a5",
+                              fontSize:
+                                "12px",
+                              fontWeight:
+                                "700",
+                            }}
+                          >
+                            Rejection Reason
+                          </p>
+
+                          <p
+                            style={{
+                              margin: 0,
+                              color:
+                                "#fecaca",
+                              fontSize:
+                                "13px",
+                              lineHeight:
+                                "1.5",
+                            }}
+                          >
+                            {
+                              song.rejection_reason
+                            }
+                          </p>
+                        </div>
+                      )}
+
+                    {/* AUDIO */}
+                    {song.audio_url ? (
+                      <audio
+                        controls
+                        src={
+                          song.audio_url
+                        }
+                        style={{
+                          width:
+                            "100%",
+                          marginBottom:
+                            "12px",
+                        }}
+                      />
+                    ) : (
+                      <p
+                        style={{
+                          color:
+                            "#64748b",
+                          fontSize:
+                            "13px",
+                        }}
+                      >
+                        Audio not available
+                      </p>
+                    )}
+
+                    {/* EDIT REJECTED SONG */}
+                    {song.status ===
+                      "Rejected" && (
+                      <button
+                        onClick={() =>
+                          router.push(
+                            `/customer-dashboard/edit/${song.id}`
+                          )
+                        }
+                        style={{
+                          width:
+                            "100%",
+                          background:
+                            "#f59e0b",
+                          color:
+                            "#111827",
+                          border:
+                            "none",
+                          borderRadius:
+                            "8px",
+                          padding:
+                            "10px",
+                          cursor:
+                            "pointer",
+                          fontWeight:
+                            "700",
+                        }}
+                      >
+                        ✏️ Edit & Resubmit
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
         )}
-      </div>
+      </section>
+    </main>
+  );
+}
+
+/* STAT CARD */
+function StatCard({
+  title,
+  value,
+  valueColor = "white",
+}: {
+  title: string;
+  value: number;
+  valueColor?: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "#0f172a",
+        border:
+          "1px solid #1e293b",
+        borderRadius: "12px",
+        padding: "18px",
+      }}
+    >
+      <p
+        style={{
+          color: "#94a3b8",
+          margin: 0,
+          fontSize: "13px",
+        }}
+      >
+        {title}
+      </p>
+
+      <h2
+        style={{
+          margin:
+            "7px 0 0",
+          fontSize: "28px",
+          color: valueColor,
+        }}
+      >
+        {value}
+      </h2>
     </div>
   );
+}
+
+/* SIDEBAR BUTTON */
+function sideButtonStyle(
+  active: boolean
+) {
+  return {
+    width: "100%",
+    padding: "12px",
+    marginBottom: "8px",
+    background: active
+      ? "#2563eb"
+      : "transparent",
+    color: active
+      ? "white"
+      : "#d1d5db",
+    border: "none",
+    borderRadius: "8px",
+    textAlign:
+      "left" as const,
+    cursor: "pointer",
+    fontWeight: active
+      ? "bold"
+      : "normal",
+  };
 }
