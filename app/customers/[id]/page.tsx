@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -799,11 +800,7 @@ export default function CustomerDetailsPage() {
               fontSize: "14px",
             }}
           >
-            <span>
-              {isActive
-                ? "●"
-                : "●"}
-            </span>
+            <span>●</span>
 
             {isActive
               ? "Active Account"
@@ -881,7 +878,7 @@ export default function CustomerDetailsPage() {
         />
       </div>
 
-      {/* Songs */}
+      {/* Songs Header */}
       <div
         style={{
           display: "flex",
@@ -933,6 +930,7 @@ export default function CustomerDetailsPage() {
         </div>
       </div>
 
+      {/* Songs */}
       {songs.length === 0 ? (
         <div
           style={{
@@ -1101,6 +1099,7 @@ export default function CustomerDetailsPage() {
                 />
               )}
 
+              {/* Song Actions */}
               <div
                 style={{
                   display: "flex",
@@ -1125,6 +1124,8 @@ export default function CustomerDetailsPage() {
                       "7px",
                     cursor:
                       "pointer",
+                    fontWeight:
+                      "bold",
                   }}
                 >
                   ✓ Approve
@@ -1147,6 +1148,8 @@ export default function CustomerDetailsPage() {
                       "7px",
                     cursor:
                       "pointer",
+                    fontWeight:
+                      "bold",
                   }}
                 >
                   ✕ Reject
@@ -1169,10 +1172,34 @@ export default function CustomerDetailsPage() {
                       "7px",
                     cursor:
                       "pointer",
+                    fontWeight:
+                      "bold",
                   }}
                 >
                   🗑 Delete
                 </button>
+
+                {/* View Details */}
+                <Link
+                  href={`/customers/${customer.id}/song/${song.id}`}
+                  style={{
+                    display:
+                      "inline-block",
+                    background:
+                      "#2563eb",
+                    color: "white",
+                    textDecoration:
+                      "none",
+                    padding:
+                      "9px 12px",
+                    borderRadius:
+                      "7px",
+                    fontWeight:
+                      "bold",
+                  }}
+                >
+                  👁️ View Details
+                </Link>
               </div>
             </div>
           ))}
