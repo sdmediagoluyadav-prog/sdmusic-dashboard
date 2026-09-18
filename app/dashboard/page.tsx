@@ -130,13 +130,14 @@ export default function Dashboard() {
       return;
     }
 
-    // GET CUSTOMER LINKS FROM customer_songs
+    // GET CUSTOMER LINKS
     const songIds = recent.map((song: any) => song.id);
 
-    const { data: customerLinks, error: linkError } = await supabase
-      .from("customer_songs")
-      .select("customer_id, song_id")
-      .in("song_id", songIds);
+    const { data: customerLinks, error: linkError } =
+      await supabase
+        .from("customer_songs")
+        .select("customer_id, song_id")
+        .in("song_id", songIds);
 
     if (linkError) {
       console.error("Customer links error:", linkError);
@@ -155,32 +156,43 @@ export default function Dashboard() {
       ];
 
       if (customerIds.length > 0) {
-        const { data: customerData, error: customerError } =
-          await supabase
-            .from("customers")
-            .select("id, customer_name, label_name")
-            .in("id", customerIds);
+        const {
+          data: customerData,
+          error: customerError,
+        } = await supabase
+          .from("customers")
+          .select("id, customer_name, label_name")
+          .in("id", customerIds);
 
         if (customerError) {
-          console.error("Customer data error:", customerError);
+          console.error(
+            "Customer data error:",
+            customerError
+          );
         } else {
           customers = customerData || [];
         }
       }
     }
 
-    // ADD CUSTOMER INFO TO SONGS
+    // ADD CUSTOMER INFO
     const songsWithUrls = await Promise.all(
       recent.map(async (song: any) => {
-        const coverUrl = await createSignedUrl(song.cover_url);
-        const audioUrl = await createSignedUrl(song.audio_url);
+        const coverUrl = await createSignedUrl(
+          song.cover_url
+        );
+
+        const audioUrl = await createSignedUrl(
+          song.audio_url
+        );
 
         const link = customerLinks?.find(
           (item: any) => item.song_id === song.id
         );
 
         const customer = customers.find(
-          (item: any) => item.id === link?.customer_id
+          (item: any) =>
+            item.id === link?.customer_id
         );
 
         return {
@@ -209,6 +221,7 @@ export default function Dashboard() {
       .from("songs")
       .update({
         status: "Approved",
+        rejection_reason: null,
       })
       .eq("id", id);
 
@@ -216,10 +229,12 @@ export default function Dashboard() {
 
     if (error) {
       console.error("Approve error:", error);
+
       alert(
         "Approve Failed ❌\n\n" +
-        error.message
+          error.message
       );
+
       return;
     }
 
@@ -230,11 +245,21 @@ export default function Dashboard() {
 
   // REJECT SONG
   async function rejectSong(id: number) {
-    const confirmReject = confirm(
-      "Kya aap is song ko Reject karna chahte hain?"
+    const reason = prompt(
+      "Song Reject karne ka reason likhiye:"
     );
 
-    if (!confirmReject) return;
+    if (reason === null) return;
+
+    const trimmedReason = reason.trim();
+
+    if (!trimmedReason) {
+      alert(
+        "Rejection reason likhna zaroori hai ❌"
+      );
+
+      return;
+    }
 
     setActionLoading(id);
 
@@ -242,6 +267,7 @@ export default function Dashboard() {
       .from("songs")
       .update({
         status: "Rejected",
+        rejection_reason: trimmedReason,
       })
       .eq("id", id);
 
@@ -249,14 +275,16 @@ export default function Dashboard() {
 
     if (error) {
       console.error("Reject error:", error);
+
       alert(
         "Reject Failed ❌\n\n" +
-        error.message
+          error.message
       );
+
       return;
     }
 
-    alert("Song Rejected ❌");
+    alert("Song Rejected Successfully ❌");
 
     await loadDashboard();
   }
@@ -277,9 +305,11 @@ export default function Dashboard() {
     if (error) {
       alert(
         "Delete Failed ❌\n\n" +
-        error.message
+          error.message
       );
+
       console.error(error);
+
       return;
     }
 
@@ -290,7 +320,8 @@ export default function Dashboard() {
 
   // LOGOUT
   async function logout() {
-    const { error } = await supabase.auth.signOut();
+    const { error } =
+      await supabase.auth.signOut();
 
     if (error) {
       alert("Logout Failed ❌");
@@ -397,7 +428,9 @@ export default function Dashboard() {
 
         {/* DASHBOARD */}
         <button
-          onClick={() => router.push("/dashboard")}
+          onClick={() =>
+            router.push("/dashboard")
+          }
           style={{
             width: "100%",
             padding: "13px",
@@ -416,7 +449,9 @@ export default function Dashboard() {
 
         {/* ALL SONGS */}
         <button
-          onClick={() => router.push("/songs")}
+          onClick={() =>
+            router.push("/songs")
+          }
           style={{
             width: "100%",
             padding: "13px",
@@ -434,7 +469,9 @@ export default function Dashboard() {
 
         {/* UPLOAD */}
         <button
-          onClick={() => router.push("/upload")}
+          onClick={() =>
+            router.push("/upload")
+          }
           style={{
             width: "100%",
             padding: "13px",
@@ -452,7 +489,9 @@ export default function Dashboard() {
 
         {/* CUSTOMERS */}
         <button
-          onClick={() => router.push("/customers")}
+          onClick={() =>
+            router.push("/customers")
+          }
           style={{
             width: "100%",
             padding: "13px",
@@ -535,7 +574,9 @@ export default function Dashboard() {
           </div>
 
           <button
-            onClick={() => router.push("/upload")}
+            onClick={() =>
+              router.push("/upload")
+            }
             style={{
               background: "#22c55e",
               color: "white",
@@ -671,7 +712,9 @@ export default function Dashboard() {
             </h2>
 
             <button
-              onClick={() => router.push("/songs")}
+              onClick={() =>
+                router.push("/songs")
+              }
               style={{
                 background: "transparent",
                 color: "#22c55e",
@@ -688,13 +731,14 @@ export default function Dashboard() {
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: "1050px",
+              minWidth: "1300px",
             }}
           >
             <thead>
               <tr
                 style={{
-                  borderBottom: "1px solid #334155",
+                  borderBottom:
+                    "1px solid #334155",
                   color: "#94a3b8",
                 }}
               >
@@ -730,6 +774,13 @@ export default function Dashboard() {
                   align="left"
                   style={{ padding: "12px 8px" }}
                 >
+                  Rejection Reason
+                </th>
+
+                <th
+                  align="left"
+                  style={{ padding: "12px 8px" }}
+                >
                   Customer / Label
                 </th>
 
@@ -758,9 +809,10 @@ export default function Dashboard() {
 
             <tbody>
               {recentSongs.map((song: any) => {
-                const statusStyle = getStatusStyle(
-                  song.status
-                );
+                const statusStyle =
+                  getStatusStyle(
+                    song.status
+                  );
 
                 return (
                   <tr
@@ -778,7 +830,9 @@ export default function Dashboard() {
                     >
                       {song.display_cover_url ? (
                         <img
-                          src={song.display_cover_url}
+                          src={
+                            song.display_cover_url
+                          }
                           alt={
                             song.song_title ||
                             "Song Cover"
@@ -824,14 +878,49 @@ export default function Dashboard() {
                       <span
                         style={{
                           ...statusStyle,
-                          padding: "5px 10px",
+                          padding:
+                            "5px 10px",
                           borderRadius: "20px",
                           fontSize: "12px",
                           fontWeight: "bold",
                         }}
                       >
-                        {song.status || "Pending"}
+                        {song.status ||
+                          "Pending"}
                       </span>
+                    </td>
+
+                    {/* REJECTION REASON */}
+                    <td
+                      style={{
+                        padding: "12px 8px",
+                        maxWidth: "250px",
+                      }}
+                    >
+                      {song.status ===
+                        "Rejected" &&
+                      song.rejection_reason ? (
+                        <span
+                          style={{
+                            color: "#fca5a5",
+                            fontSize: "13px",
+                            lineHeight: "1.5",
+                          }}
+                        >
+                          {
+                            song.rejection_reason
+                          }
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            color: "#64748b",
+                            fontSize: "13px",
+                          }}
+                        >
+                          —
+                        </span>
+                      )}
                     </td>
 
                     {/* CUSTOMER */}
@@ -844,27 +933,36 @@ export default function Dashboard() {
                         <div>
                           <div
                             style={{
-                              fontWeight: "bold",
+                              fontWeight:
+                                "bold",
                             }}
                           >
-                            {song.customer.customer_name}
+                            {
+                              song.customer
+                                .customer_name
+                            }
                           </div>
 
                           <div
                             style={{
-                              color: "#94a3b8",
-                              fontSize: "12px",
-                              marginTop: "3px",
+                              color:
+                                "#94a3b8",
+                              fontSize:
+                                "12px",
+                              marginTop:
+                                "3px",
                             }}
                           >
-                            {song.customer.label_name ||
+                            {song.customer
+                              .label_name ||
                               "No Label"}
                           </div>
                         </div>
                       ) : (
                         <span
                           style={{
-                            color: "#94a3b8",
+                            color:
+                              "#94a3b8",
                           }}
                         >
                           No Customer
@@ -906,27 +1004,37 @@ export default function Dashboard() {
                         style={{
                           display: "flex",
                           gap: "6px",
-                          flexWrap: "wrap",
+                          flexWrap:
+                            "wrap",
                         }}
                       >
-                        {song.status !== "Approved" && (
+                        {song.status !==
+                          "Approved" && (
                           <button
                             onClick={() =>
-                              approveSong(song.id)
+                              approveSong(
+                                song.id
+                              )
                             }
                             disabled={
                               actionLoading ===
                               song.id
                             }
                             style={{
-                              background: "#16a34a",
-                              color: "white",
-                              border: "none",
+                              background:
+                                "#16a34a",
+                              color:
+                                "white",
+                              border:
+                                "none",
                               padding:
                                 "7px 10px",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              fontWeight: "bold",
+                              borderRadius:
+                                "6px",
+                              cursor:
+                                "pointer",
+                              fontWeight:
+                                "bold",
                               opacity:
                                 actionLoading ===
                                 song.id
@@ -941,24 +1049,33 @@ export default function Dashboard() {
                           </button>
                         )}
 
-                        {song.status !== "Rejected" && (
+                        {song.status !==
+                          "Rejected" && (
                           <button
                             onClick={() =>
-                              rejectSong(song.id)
+                              rejectSong(
+                                song.id
+                              )
                             }
                             disabled={
                               actionLoading ===
                               song.id
                             }
                             style={{
-                              background: "#dc2626",
-                              color: "white",
-                              border: "none",
+                              background:
+                                "#dc2626",
+                              color:
+                                "white",
+                              border:
+                                "none",
                               padding:
                                 "7px 10px",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              fontWeight: "bold",
+                              borderRadius:
+                                "6px",
+                              cursor:
+                                "pointer",
+                              fontWeight:
+                                "bold",
                               opacity:
                                 actionLoading ===
                                 song.id
@@ -983,15 +1100,21 @@ export default function Dashboard() {
                     >
                       <button
                         onClick={() =>
-                          deleteSong(song.id)
+                          deleteSong(
+                            song.id
+                          )
                         }
                         style={{
-                          background: "#ef4444",
+                          background:
+                            "#ef4444",
                           color: "white",
                           border: "none",
-                          padding: "7px 12px",
-                          borderRadius: "6px",
-                          cursor: "pointer",
+                          padding:
+                            "7px 12px",
+                          borderRadius:
+                            "6px",
+                          cursor:
+                            "pointer",
                         }}
                       >
                         Delete
@@ -1004,10 +1127,11 @@ export default function Dashboard() {
               {recentSongs.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     style={{
                       padding: "40px",
-                      textAlign: "center",
+                      textAlign:
+                        "center",
                       color: "#94a3b8",
                     }}
                   >

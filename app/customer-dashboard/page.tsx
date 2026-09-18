@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "../../lib/supabase";
 
 type Song = {
   id: number;
@@ -10,126 +10,147 @@ type Song = {
   artist_name: string;
   cover_url: string | null;
   audio_url: string | null;
+  status: string | null;
+  rejection_reason: string | null;
 };
 
 export default function CustomerDashboard() {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
   const [songs, setSongs] = useState<Song[]>([]);
+  const [loading, setLoading] = useState(true);
   const [customerName, setCustomerName] = useState("");
   const [labelName, setLabelName] = useState("");
 
   useEffect(() => {
-    let mounted = true;
+    loadCustomerDashboard();
+  }, []);
 
-    async function loadCustomerDashboard() {
-      try {
-        // 1. Check login
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+  async function loadCustomerDashboard() {
+    setLoading(true);
 
-        if (!session) {
-          router.replace("/login");
-          return;
-        }
+    try {
+      // CHECK LOGIN
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-        // 2. Get customer
-        const { data: customer, error: customerError } =
-          await supabase
-            .from("customers")
-            .select("id, customer_name, label_name")
-            .eq("auth_user_id", session.user.id)
-            .single();
+      if (!session) {
+        router.push("/login");
+        return;
+      }
 
-        if (customerError || !customer) {
-          console.error("Customer fetch error:", customerError);
-          alert("Customer account नहीं मिला ❌");
-          router.replace("/login");
-          return;
-        }
+      // FIND CUSTOMER
+      const { data: customer, error: customerError } = await supabase
+        .from("customers")
+        .select("id, name, label_name")
+        .eq("auth_user_id", session.user.id)
+        .single();
 
-        if (!mounted) return;
+      if (customerError || !customer) {
+        console.error("Customer error:", customerError);
 
-        setCustomerName(customer.customer_name);
-        setLabelName(customer.label_name);
+        alert("Customer account नहीं मिला ❌");
 
-        // 3. Get assigned songs from customer_songs
-        const { data: assignments, error: assignmentError } =
-          await supabase
-            .from("customer_songs")
-            .select("song_id")
-            .eq("customer_id", customer.id);
+        await supabase.auth.signOut();
+        router.push("/login");
+        return;
+      }
 
-        if (assignmentError) {
-          console.error(
-            "Customer songs fetch error:",
-            assignmentError
-          );
-          setSongs([]);
-          setLoading(false);
-          return;
-        }
+      setCustomerName(customer.name || "");
+      setLabelName(customer.label_name || "");
 
-        // No assigned songs
-        if (!assignments || assignments.length === 0) {
-          setSongs([]);
-          setLoading(false);
-          return;
-        }
+      // FIND CUSTOMER SONG ASSIGNMENTS
+      const { data: customerSongs, error: customerSongsError } =
+        await supabase
+          .from("customer_songs")
+          .select("song_id")
+          .eq("customer_id", customer.id);
 
-        // 4. Get song IDs
-        const songIds = assignments.map(
-          (item) => item.song_id
+      if (customerSongsError) {
+        console.error(
+          "Customer songs error:",
+          customerSongsError
         );
 
-        // 5. Get actual songs
-        const { data: songData, error: songError } =
-          await supabase
-            .from("songs")
-            .select(
-              "id, song_title, artist_name, cover_url, audio_url"
-            )
-            .in("id", songIds)
-            .order("id", { ascending: false });
-
-        if (songError) {
-          console.error("Songs fetch error:", songError);
-          setSongs([]);
-        } else {
-          setSongs(songData || []);
-        }
-      } catch (error) {
-        console.error("Dashboard error:", error);
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        setSongs([]);
+        setLoading(false);
+        return;
       }
+
+      if (!customerSongs || customerSongs.length === 0) {
+        setSongs([]);
+        setLoading(false);
+        return;
+      }
+
+      const songIds = customerSongs.map(
+        (item) => item.song_id
+      );
+
+      // GET SONGS
+      const { data: songData, error: songError } =
+        await supabase
+          .from("songs")
+          .select(
+            "id, song_title, artist_name, cover_url, audio_url, status, rejection_reason"
+          )
+          .in("id", songIds)
+          .order("id", { ascending: false });
+
+      if (songError) {
+        console.error("Song error:", songError);
+
+        alert(
+          "Songs load nahi ho paaye ❌\n\n" +
+            songError.message
+        );
+
+        setSongs([]);
+      } else {
+        setSongs(songData || []);
+      }
+    } catch (error) {
+      console.error("Dashboard error:", error);
     }
 
-    loadCustomerDashboard();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!session) {
-          router.replace("/login");
-        }
-      }
-    );
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [router]);
+    setLoading(false);
+  }
 
   async function logout() {
     await supabase.auth.signOut();
-    router.replace("/login");
+    router.push("/login");
+  }
+
+  function getStatusStyle(status: string | null) {
+    if (status === "Approved") {
+      return {
+        background: "#052e16",
+        color: "#4ade80",
+        border: "1px solid #166534",
+      };
+    }
+
+    if (status === "Rejected") {
+      return {
+        background: "#450a0a",
+        color: "#f87171",
+        border: "1px solid #991b1b",
+      };
+    }
+
+    return {
+      background: "#422006",
+      color: "#fbbf24",
+      border: "1px solid #92400e",
+    };
+  }
+
+  function getStatusText(status: string | null) {
+    if (status === "Approved") return "🟢 Approved";
+    if (status === "Rejected") return "🔴 Rejected";
+
+    return "🟠 Pending";
   }
 
   if (loading) {
@@ -137,12 +158,12 @@ export default function CustomerDashboard() {
       <main
         style={{
           minHeight: "100vh",
-          background: "#0f172a",
+          background: "#020617",
           color: "white",
           display: "flex",
-          justifyContent: "center",
           alignItems: "center",
-          fontSize: "22px",
+          justifyContent: "center",
+          fontFamily: "Arial, sans-serif",
         }}
       >
         Loading Customer Dashboard... 🔐
@@ -154,84 +175,127 @@ export default function CustomerDashboard() {
     <main
       style={{
         minHeight: "100vh",
-        background: "#0f172a",
+        background: "#020617",
         color: "white",
-        padding: "30px",
+        padding: "25px",
+        fontFamily: "Arial, sans-serif",
       }}
     >
       <div
         style={{
-          maxWidth: "1100px",
+          maxWidth: "1200px",
           margin: "0 auto",
         }}
       >
-        {/* Header */}
+        {/* LOGO */}
+        <div
+          style={{
+            padding: "5px",
+            marginBottom: "30px",
+            textAlign: "center",
+          }}
+        >
+          <img
+            src="/sd-logo.png"
+            alt="SD Media Entertainment"
+            style={{
+              width: "150px",
+              height: "150px",
+              objectFit: "contain",
+              display: "block",
+              margin: "0 auto 8px",
+            }}
+          />
+
+          <p
+            style={{
+              margin: 0,
+              color: "#9ca3af",
+              fontSize: "13px",
+            }}
+          >
+            Music Content Management
+          </p>
+        </div>
+
+        {/* HEADER */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            gap: "20px",
-            marginBottom: "30px",
+            gap: "15px",
             flexWrap: "wrap",
+            marginBottom: "25px",
           }}
         >
           <div>
             <h1
               style={{
+                fontSize: "30px",
                 margin: 0,
-                fontSize: "28px",
-                color: "#22c55e",
+                marginBottom: "8px",
               }}
             >
-              Customer Dashboard 🎵
+              Customer Dashboard
             </h1>
 
             <p
               style={{
-                marginTop: "8px",
                 color: "#94a3b8",
+                margin: 0,
               }}
             >
-              {customerName || "Customer"}
-              {labelName ? ` • ${labelName}` : ""}
+              Welcome, {customerName || "Customer"}
             </p>
+
+            {labelName && (
+              <p
+                style={{
+                  color: "#64748b",
+                  marginTop: "5px",
+                  marginBottom: 0,
+                }}
+              >
+                Label: {labelName}
+              </p>
+            )}
           </div>
 
-          {/* Header Buttons */}
           <div
             style={{
               display: "flex",
               gap: "10px",
-              alignItems: "center",
               flexWrap: "wrap",
             }}
           >
+            {/* UPLOAD BUTTON */}
             <button
               onClick={() => router.push("/upload")}
               style={{
-                background: "#22c55e",
+                background: "#2563eb",
                 color: "white",
                 border: "none",
-                padding: "11px 18px",
                 borderRadius: "8px",
+                padding: "11px 18px",
                 cursor: "pointer",
-                fontWeight: "bold",
+                fontWeight: "600",
               }}
             >
               + Upload Song
             </button>
 
+            {/* LOGOUT */}
             <button
               onClick={logout}
               style={{
-                background: "#ef4444",
+                background: "#dc2626",
                 color: "white",
                 border: "none",
-                padding: "11px 18px",
                 borderRadius: "8px",
+                padding: "11px 18px",
                 cursor: "pointer",
-                fontWeight: "bold",
+                fontWeight: "600",
               }}
             >
               Logout
@@ -239,170 +303,212 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
-        {/* No songs */}
+        {/* SONG COUNT */}
+        <div
+          style={{
+            background: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: "12px",
+            padding: "18px",
+            marginBottom: "25px",
+          }}
+        >
+          <p
+            style={{
+              color: "#94a3b8",
+              margin: 0,
+              fontSize: "14px",
+            }}
+          >
+            Total Songs
+          </p>
+
+          <h2
+            style={{
+              margin: "5px 0 0",
+              fontSize: "28px",
+            }}
+          >
+            {songs.length}
+          </h2>
+        </div>
+
+        {/* SONGS */}
         {songs.length === 0 ? (
           <div
             style={{
-              background: "#1e293b",
-              padding: "40px",
-              borderRadius: "14px",
-              color: "#cbd5e1",
+              background: "#0f172a",
+              border: "1px solid #1e293b",
+              borderRadius: "12px",
+              padding: "40px 20px",
               textAlign: "center",
-              border: "1px solid #334155",
             }}
           >
-            <div
-              style={{
-                fontSize: "50px",
-                marginBottom: "15px",
-              }}
-            >
-              🎵
-            </div>
-
             <h2
               style={{
-                margin: "0 0 10px",
-                color: "white",
+                marginTop: 0,
               }}
             >
-              अभी कोई Song उपलब्ध नहीं है
+              No Songs Found
             </h2>
 
             <p
               style={{
                 color: "#94a3b8",
-                marginBottom: "20px",
               }}
             >
-              अपना पहला Song upload करने के लिए नीचे दिए गए button पर
-              click करें।
+              Abhi aapke account me koi song available nahi hai.
             </p>
 
             <button
               onClick={() => router.push("/upload")}
               style={{
-                background: "#22c55e",
+                background: "#2563eb",
                 color: "white",
                 border: "none",
-                padding: "12px 22px",
                 borderRadius: "8px",
+                padding: "11px 20px",
                 cursor: "pointer",
-                fontWeight: "bold",
-                fontSize: "15px",
+                fontWeight: "600",
               }}
             >
-              + Upload Your First Song
+              Upload Your First Song
             </button>
           </div>
         ) : (
-          <>
-            {/* Songs Heading */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "20px",
-                gap: "15px",
-                flexWrap: "wrap",
-              }}
-            >
-              <h2
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: "20px",
+            }}
+          >
+            {songs.map((song) => (
+              <div
+                key={song.id}
                 style={{
-                  margin: 0,
+                  background: "#0f172a",
+                  border: "1px solid #1e293b",
+                  borderRadius: "14px",
+                  overflow: "hidden",
                 }}
               >
-                🎵 आपके Songs
-              </h2>
-
-              <button
-                onClick={() => router.push("/upload")}
-                style={{
-                  background: "#22c55e",
-                  color: "white",
-                  border: "none",
-                  padding: "10px 18px",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                + Upload Song
-              </button>
-            </div>
-
-            {/* Songs Grid */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fill, minmax(280px, 1fr))",
-                gap: "20px",
-              }}
-            >
-              {songs.map((song) => (
+                {/* COVER */}
                 <div
-                  key={song.id}
                   style={{
-                    background: "#1e293b",
-                    padding: "18px",
-                    borderRadius: "14px",
-                    border: "1px solid #334155",
+                    width: "100%",
+                    aspectRatio: "1 / 1",
+                    background: "#020617",
                   }}
                 >
-                  {/* Cover */}
                   {song.cover_url ? (
                     <img
                       src={song.cover_url}
                       alt={song.song_title}
                       style={{
                         width: "100%",
-                        height: "260px",
+                        height: "100%",
                         objectFit: "cover",
-                        borderRadius: "10px",
-                        marginBottom: "15px",
+                        display: "block",
                       }}
                     />
                   ) : (
                     <div
                       style={{
-                        width: "100%",
-                        height: "260px",
-                        background: "#334155",
-                        borderRadius: "10px",
+                        height: "100%",
                         display: "flex",
-                        justifyContent: "center",
                         alignItems: "center",
-                        fontSize: "50px",
-                        marginBottom: "15px",
+                        justifyContent: "center",
+                        color: "#64748b",
                       }}
                     >
-                      🎵
+                      No Cover
                     </div>
                   )}
+                </div>
 
-                  {/* Song title */}
+                {/* CONTENT */}
+                <div
+                  style={{
+                    padding: "16px",
+                  }}
+                >
                   <h3
                     style={{
-                      margin: "0 0 8px",
-                      color: "white",
+                      margin: "0 0 7px",
+                      fontSize: "18px",
                     }}
                   >
                     {song.song_title}
                   </h3>
 
-                  {/* Artist */}
                   <p
                     style={{
-                      margin: "0 0 15px",
+                      margin: "0 0 12px",
                       color: "#94a3b8",
                     }}
                   >
-                    {song.artist_name}
+                    Artist: {song.artist_name}
                   </p>
 
-                  {/* Audio */}
+                  {/* STATUS */}
+                  <div
+                    style={{
+                      marginBottom: "12px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        ...getStatusStyle(song.status),
+                        display: "inline-block",
+                        borderRadius: "999px",
+                        padding: "6px 10px",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                      }}
+                    >
+                      {getStatusText(song.status)}
+                    </span>
+                  </div>
+
+                  {/* REJECTION REASON */}
+                  {song.status === "Rejected" &&
+                    song.rejection_reason && (
+                      <div
+                        style={{
+                          background: "#1c0a0a",
+                          border: "1px solid #7f1d1d",
+                          borderRadius: "8px",
+                          padding: "12px",
+                          marginBottom: "14px",
+                        }}
+                      >
+                        <p
+                          style={{
+                            margin: "0 0 5px",
+                            color: "#fca5a5",
+                            fontSize: "12px",
+                            fontWeight: "700",
+                          }}
+                        >
+                          Rejection Reason
+                        </p>
+
+                        <p
+                          style={{
+                            margin: 0,
+                            color: "#fecaca",
+                            fontSize: "13px",
+                            lineHeight: "1.5",
+                          }}
+                        >
+                          {song.rejection_reason}
+                        </p>
+                      </div>
+                    )}
+
+                  {/* AUDIO */}
                   {song.audio_url ? (
                     <audio
                       controls
@@ -414,17 +520,17 @@ export default function CustomerDashboard() {
                   ) : (
                     <p
                       style={{
-                        color: "#f87171",
-                        fontSize: "14px",
+                        color: "#64748b",
+                        fontSize: "13px",
                       }}
                     >
-                      Audio उपलब्ध नहीं है
+                      Audio not available
                     </p>
                   )}
                 </div>
-              ))}
-            </div>
-          </>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </main>
