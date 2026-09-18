@@ -39,9 +39,12 @@ export default function AdminCustomerSongDetails() {
   const [customer, setCustomer] =
     useState<Customer | null>(null);
 
-  const [song, setSong] = useState<Song | null>(null);
+  const [song, setSong] =
+    useState<Song | null>(null);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
+
   const [actionLoading, setActionLoading] =
     useState(false);
 
@@ -53,7 +56,6 @@ export default function AdminCustomerSongDetails() {
     setLoading(true);
 
     try {
-      // Current session
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -63,8 +65,7 @@ export default function AdminCustomerSongDetails() {
         return;
       }
 
-      // Check whether current user is a customer.
-      // Admin account should not be connected to customers table.
+      // Check whether current user is a customer
       const { data: currentCustomer } =
         await supabase
           .from("customers")
@@ -78,15 +79,17 @@ export default function AdminCustomerSongDetails() {
         return;
       }
 
-      // Customer
-      const { data: customerData, error: customerError } =
-        await supabase
-          .from("customers")
-          .select(
-            "id, customer_name, label_name, email, is_active"
-          )
-          .eq("id", customerId)
-          .single();
+      // CUSTOMER
+      const {
+        data: customerData,
+        error: customerError,
+      } = await supabase
+        .from("customers")
+        .select(
+          "id, customer_name, label_name, email, is_active"
+        )
+        .eq("id", customerId)
+        .single();
 
       if (customerError || !customerData) {
         alert("Customer nahi mila ❌");
@@ -96,7 +99,7 @@ export default function AdminCustomerSongDetails() {
 
       setCustomer(customerData);
 
-      // Check customer-song relation
+      // CHECK CUSTOMER SONG RELATION
       const {
         data: customerSong,
         error: customerSongError,
@@ -107,10 +110,7 @@ export default function AdminCustomerSongDetails() {
         .eq("song_id", songId)
         .maybeSingle();
 
-      if (
-        customerSongError ||
-        !customerSong
-      ) {
+      if (customerSongError || !customerSong) {
         alert(
           "Ye song is customer ke account me nahi hai ❌"
         );
@@ -122,30 +122,32 @@ export default function AdminCustomerSongDetails() {
         return;
       }
 
-      // Song
-      const { data: songData, error: songError } =
-        await supabase
-          .from("songs")
-          .select(
-            `
-            id,
-            song_title,
-            artist_name,
-            album_name,
-            singer_name,
-            composer,
-            lyricist,
-            genre,
-            language,
-            release_date,
-            cover_url,
-            audio_url,
-            status,
-            rejection_reason
+      // SONG
+      const {
+        data: songData,
+        error: songError,
+      } = await supabase
+        .from("songs")
+        .select(
           `
-          )
-          .eq("id", songId)
-          .single();
+          id,
+          song_title,
+          artist_name,
+          album_name,
+          singer_name,
+          composer,
+          lyricist,
+          genre,
+          language,
+          release_date,
+          cover_url,
+          audio_url,
+          status,
+          rejection_reason
+        `
+        )
+        .eq("id", songId)
+        .single();
 
       if (songError || !songData) {
         alert("Song nahi mila ❌");
@@ -160,28 +162,30 @@ export default function AdminCustomerSongDetails() {
       let coverUrl = songData.cover_url;
       let audioUrl = songData.audio_url;
 
-      // Signed cover URL
+      // SIGNED COVER URL
       if (coverUrl) {
-        const { data } = await supabase.storage
-          .from("songs")
-          .createSignedUrl(
-            coverUrl,
-            60 * 60
-          );
+        const { data } =
+          await supabase.storage
+            .from("songs")
+            .createSignedUrl(
+              coverUrl,
+              60 * 60
+            );
 
         if (data?.signedUrl) {
           coverUrl = data.signedUrl;
         }
       }
 
-      // Signed audio URL
+      // SIGNED AUDIO URL
       if (audioUrl) {
-        const { data } = await supabase.storage
-          .from("songs")
-          .createSignedUrl(
-            audioUrl,
-            60 * 60
-          );
+        const { data } =
+          await supabase.storage
+            .from("songs")
+            .createSignedUrl(
+              audioUrl,
+              60 * 60
+            );
 
         if (data?.signedUrl) {
           audioUrl = data.signedUrl;
@@ -201,6 +205,7 @@ export default function AdminCustomerSongDetails() {
     }
   }
 
+  // APPROVE
   async function approveSong() {
     if (!song) return;
 
@@ -213,13 +218,14 @@ export default function AdminCustomerSongDetails() {
     setActionLoading(true);
 
     try {
-      const { error } = await supabase
-        .from("songs")
-        .update({
-          status: "Approved",
-          rejection_reason: null,
-        })
-        .eq("id", song.id);
+      const { error } =
+        await supabase
+          .from("songs")
+          .update({
+            status: "Approved",
+            rejection_reason: null,
+          })
+          .eq("id", song.id);
 
       if (error) {
         console.error(error);
@@ -241,6 +247,7 @@ export default function AdminCustomerSongDetails() {
     }
   }
 
+  // REJECT
   async function rejectSong() {
     if (!song) return;
 
@@ -250,7 +257,8 @@ export default function AdminCustomerSongDetails() {
 
     if (reason === null) return;
 
-    const trimmedReason = reason.trim();
+    const trimmedReason =
+      reason.trim();
 
     if (!trimmedReason) {
       alert(
@@ -262,14 +270,15 @@ export default function AdminCustomerSongDetails() {
     setActionLoading(true);
 
     try {
-      const { error } = await supabase
-        .from("songs")
-        .update({
-          status: "Rejected",
-          rejection_reason:
-            trimmedReason,
-        })
-        .eq("id", song.id);
+      const { error } =
+        await supabase
+          .from("songs")
+          .update({
+            status: "Rejected",
+            rejection_reason:
+              trimmedReason,
+          })
+          .eq("id", song.id);
 
       if (error) {
         console.error(error);
@@ -292,34 +301,39 @@ export default function AdminCustomerSongDetails() {
     }
   }
 
+  // DELETE
   async function deleteSong() {
     if (!song) return;
 
-    const firstConfirm = window.confirm(
-      "Kya aap is song ko delete karna chahte hain?"
-    );
+    const firstConfirm =
+      window.confirm(
+        "Kya aap is song ko delete karna chahte hain?"
+      );
 
     if (!firstConfirm) return;
 
-    const secondConfirm = window.confirm(
-      "WARNING ⚠️\n\nYe song customer ke account se delete ho jayega.\n\nKya aap REALLY delete karna chahte hain?"
-    );
+    const secondConfirm =
+      window.confirm(
+        "WARNING ⚠️\n\nYe song customer ke account se delete ho jayega.\n\nKya aap REALLY delete karna chahte hain?"
+      );
 
     if (!secondConfirm) return;
 
     setActionLoading(true);
 
     try {
-      // Delete customer-song relation first
-      const { error: relationError } =
-        await supabase
-          .from("customer_songs")
-          .delete()
-          .eq("customer_id", customerId)
-          .eq("song_id", song.id);
+      const {
+        error: relationError,
+      } = await supabase
+        .from("customer_songs")
+        .delete()
+        .eq("customer_id", customerId)
+        .eq("song_id", song.id);
 
       if (relationError) {
-        console.error(relationError);
+        console.error(
+          relationError
+        );
 
         alert(
           "Customer song relation delete nahi hua ❌"
@@ -328,15 +342,17 @@ export default function AdminCustomerSongDetails() {
         return;
       }
 
-      // Delete song row
-      const { error: songDeleteError } =
-        await supabase
-          .from("songs")
-          .delete()
-          .eq("id", song.id);
+      const {
+        error: songDeleteError,
+      } = await supabase
+        .from("songs")
+        .delete()
+        .eq("id", song.id);
 
       if (songDeleteError) {
-        console.error(songDeleteError);
+        console.error(
+          songDeleteError
+        );
 
         alert(
           "Song database se delete nahi hua ❌"
@@ -345,7 +361,9 @@ export default function AdminCustomerSongDetails() {
         return;
       }
 
-      alert("Song successfully deleted ✅");
+      alert(
+        "Song successfully deleted ✅"
+      );
 
       router.replace(
         `/customers/${customerId}`
@@ -362,6 +380,7 @@ export default function AdminCustomerSongDetails() {
       return {
         background: "#dcfce7",
         color: "#166534",
+        border: "1px solid #bbf7d0",
       };
     }
 
@@ -369,12 +388,14 @@ export default function AdminCustomerSongDetails() {
       return {
         background: "#fee2e2",
         color: "#991b1b",
+        border: "1px solid #fecaca",
       };
     }
 
     return {
       background: "#fef3c7",
       color: "#92400e",
+      border: "1px solid #fde68a",
     };
   }
 
@@ -383,12 +404,14 @@ export default function AdminCustomerSongDetails() {
       <div
         style={{
           minHeight: "100vh",
-          background: "#f3f4f6",
+          background:
+            "linear-gradient(135deg, #f8fafc, #eef2ff)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           fontSize: "20px",
           fontWeight: "800",
+          color: "#111827",
         }}
       >
         Loading Customer Song... 🎵
@@ -413,39 +436,43 @@ export default function AdminCustomerSongDetails() {
     );
   }
 
-  const statusStyle = getStatusStyle(
-    song.status
-  );
+  const statusStyle =
+    getStatusStyle(song.status);
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "#f3f4f6",
+        background:
+          "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)",
         color: "#111827",
       }}
     >
       {/* HEADER */}
       <header
         style={{
-          background: "#111827",
+          background:
+            "linear-gradient(135deg, #111827, #1f2937)",
           color: "#fff",
-          padding: "16px 25px",
+          padding: "18px 25px",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           gap: "15px",
           flexWrap: "wrap",
+          boxShadow:
+            "0 4px 20px rgba(0,0,0,0.15)",
         }}
       >
         <div>
           <div
             style={{
-              fontSize: "23px",
+              fontSize: "24px",
               fontWeight: "900",
+              letterSpacing: "-0.5px",
             }}
           >
-            🎵 Customer Song Details
+            🎵 Song Details
           </div>
 
           <div
@@ -468,9 +495,10 @@ export default function AdminCustomerSongDetails() {
           style={{
             background: "#374151",
             color: "#fff",
-            border: "none",
-            borderRadius: "8px",
-            padding: "10px 15px",
+            border:
+              "1px solid #4b5563",
+            borderRadius: "9px",
+            padding: "10px 16px",
             cursor: "pointer",
             fontWeight: "800",
           }}
@@ -481,20 +509,22 @@ export default function AdminCustomerSongDetails() {
 
       <main
         style={{
-          maxWidth: "1150px",
+          maxWidth: "1180px",
           margin: "0 auto",
-          padding: "30px 20px 60px",
+          padding: "28px 20px 60px",
         }}
       >
-        {/* CUSTOMER INFO */}
+        {/* CUSTOMER CARD */}
         <section
           style={{
             background: "#fff",
-            borderRadius: "15px",
+            borderRadius: "18px",
             padding: "20px",
             marginBottom: "22px",
             boxShadow:
-              "0 5px 20px rgba(0,0,0,0.05)",
+              "0 8px 30px rgba(15,23,42,0.07)",
+            border:
+              "1px solid #e5e7eb",
           }}
         >
           <div
@@ -509,18 +539,19 @@ export default function AdminCustomerSongDetails() {
             <div>
               <div
                 style={{
-                  fontSize: "13px",
                   color: "#6b7280",
-                  fontWeight: "700",
-                  marginBottom: "5px",
+                  fontSize: "12px",
+                  fontWeight: "900",
+                  letterSpacing: "1px",
+                  marginBottom: "6px",
                 }}
               >
-                CUSTOMER
+                CUSTOMER ACCOUNT
               </div>
 
               <div
                 style={{
-                  fontSize: "22px",
+                  fontSize: "23px",
                   fontWeight: "900",
                 }}
               >
@@ -531,7 +562,7 @@ export default function AdminCustomerSongDetails() {
               <div
                 style={{
                   color: "#6b7280",
-                  marginTop: "4px",
+                  marginTop: "5px",
                 }}
               >
                 Label:{" "}
@@ -544,9 +575,10 @@ export default function AdminCustomerSongDetails() {
                   style={{
                     color: "#6b7280",
                     marginTop: "3px",
+                    fontSize: "14px",
                   }}
                 >
-                  Email: {customer.email}
+                  ✉️ {customer.email}
                 </div>
               )}
             </div>
@@ -561,75 +593,127 @@ export default function AdminCustomerSongDetails() {
                   customer.is_active === false
                     ? "#991b1b"
                     : "#166534",
-                padding: "7px 12px",
-                borderRadius: "999px",
+                padding:
+                  "8px 14px",
+                borderRadius:
+                  "999px",
                 fontSize: "13px",
-                fontWeight: "800",
+                fontWeight: "900",
               }}
             >
               {customer.is_active === false
-                ? "Inactive"
-                : "Active"}
+                ? "● Inactive"
+                : "● Active"}
             </span>
           </div>
         </section>
 
-        {/* SONG HEADER */}
+        {/* MAIN SONG CARD */}
         <section
+          className="song-main-card"
           style={{
             background: "#fff",
-            borderRadius: "16px",
+            borderRadius: "20px",
             padding: "25px",
             boxShadow:
-              "0 5px 20px rgba(0,0,0,0.06)",
+              "0 10px 35px rgba(15,23,42,0.08)",
+            border:
+              "1px solid #e5e7eb",
             display: "grid",
             gridTemplateColumns:
-              "300px minmax(0, 1fr)",
-            gap: "30px",
+              "330px minmax(0, 1fr)",
+            gap: "32px",
           }}
         >
           {/* COVER */}
           <div>
-            {song.cover_url ? (
-              <img
-                src={song.cover_url}
-                alt={
-                  song.song_title ??
-                  "Song cover"
-                }
-                style={{
-                  width: "100%",
-                  aspectRatio: "1 / 1",
-                  objectFit: "cover",
-                  borderRadius: "14px",
-                  display: "block",
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: "100%",
-                  aspectRatio: "1 / 1",
-                  borderRadius: "14px",
-                  background: "#e5e7eb",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "50px",
-                }}
-              >
-                🎵
-              </div>
-            )}
-          </div>
-
-          {/* SONG BASIC */}
-          <div>
             <div
               style={{
-                fontSize: "32px",
+                position: "relative",
+                width: "100%",
+              }}
+            >
+              {song.cover_url ? (
+                <img
+                  src={song.cover_url}
+                  alt={
+                    song.song_title ??
+                    "Song cover"
+                  }
+                  style={{
+                    width: "100%",
+                    aspectRatio:
+                      "1 / 1",
+                    objectFit: "cover",
+                    borderRadius:
+                      "18px",
+                    display: "block",
+                    boxShadow:
+                      "0 15px 35px rgba(0,0,0,0.16)",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    aspectRatio:
+                      "1 / 1",
+                    borderRadius:
+                      "18px",
+                    background:
+                      "linear-gradient(135deg,#e5e7eb,#d1d5db)",
+                    display: "flex",
+                    alignItems:
+                      "center",
+                    justifyContent:
+                      "center",
+                    fontSize: "65px",
+                  }}
+                >
+                  🎵
+                </div>
+              )}
+            </div>
+
+            {/* COVER LABEL */}
+            <div
+              style={{
+                textAlign: "center",
+                color: "#6b7280",
+                fontSize: "12px",
+                fontWeight: "700",
+                marginTop: "10px",
+              }}
+            >
+              COVER ART
+            </div>
+          </div>
+
+          {/* SONG DETAILS */}
+          <div
+            style={{
+              minWidth: 0,
+            }}
+          >
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: "12px",
                 fontWeight: "900",
+                letterSpacing: "1px",
                 marginBottom: "7px",
+              }}
+            >
+              SONG
+            </div>
+
+            <div
+              style={{
+                fontSize: "36px",
+                fontWeight: "950",
+                lineHeight: "1.15",
+                wordBreak:
+                  "break-word",
               }}
             >
               {song.song_title ||
@@ -639,7 +723,8 @@ export default function AdminCustomerSongDetails() {
             <div
               style={{
                 color: "#6b7280",
-                fontSize: "17px",
+                fontSize: "18px",
+                marginTop: "8px",
                 marginBottom: "18px",
               }}
             >
@@ -648,37 +733,46 @@ export default function AdminCustomerSongDetails() {
                 "Unknown Artist"}
             </div>
 
+            {/* STATUS */}
             <span
               style={{
-                display: "inline-block",
+                display:
+                  "inline-block",
                 ...statusStyle,
-                padding: "8px 14px",
-                borderRadius: "999px",
+                padding:
+                  "8px 15px",
+                borderRadius:
+                  "999px",
                 fontWeight: "900",
                 fontSize: "13px",
-                marginBottom: "25px",
+                marginBottom: "22px",
               }}
             >
               {song.status ||
                 "Pending"}
             </span>
 
-            {/* AUDIO */}
-            {song.audio_url && (
+            {/* AUDIO BOX */}
+            <div
+              style={{
+                background:
+                  "#f8fafc",
+                border:
+                  "1px solid #e5e7eb",
+                borderRadius: "14px",
+                padding: "16px",
+              }}
+            >
               <div
                 style={{
-                  marginTop: "5px",
+                  fontWeight: "900",
+                  marginBottom: "10px",
                 }}
               >
-                <div
-                  style={{
-                    fontWeight: "800",
-                    marginBottom: "8px",
-                  }}
-                >
-                  🎧 Audio Preview
-                </div>
+                🎧 Audio Preview
+              </div>
 
+              {song.audio_url ? (
                 <audio
                   controls
                   src={song.audio_url}
@@ -686,34 +780,47 @@ export default function AdminCustomerSongDetails() {
                     width: "100%",
                   }}
                 />
-              </div>
-            )}
+              ) : (
+                <div
+                  style={{
+                    color: "#6b7280",
+                    fontSize: "14px",
+                  }}
+                >
+                  Audio file available nahi hai.
+                </div>
+              )}
+            </div>
 
-            {/* ACTIONS */}
+            {/* ACTION BUTTONS */}
             <div
               style={{
                 display: "flex",
                 gap: "10px",
                 flexWrap: "wrap",
-                marginTop: "22px",
+                marginTop: "20px",
               }}
             >
               <button
                 disabled={actionLoading}
                 onClick={approveSong}
                 style={{
-                  background: "#16a34a",
+                  background:
+                    "#16a34a",
                   color: "#fff",
                   border: "none",
-                  borderRadius: "8px",
-                  padding: "11px 16px",
-                  cursor: actionLoading
-                    ? "not-allowed"
-                    : "pointer",
-                  fontWeight: "800",
-                  opacity: actionLoading
-                    ? 0.6
-                    : 1,
+                  borderRadius: "9px",
+                  padding:
+                    "11px 17px",
+                  cursor:
+                    actionLoading
+                      ? "not-allowed"
+                      : "pointer",
+                  fontWeight: "900",
+                  opacity:
+                    actionLoading
+                      ? 0.6
+                      : 1,
                 }}
               >
                 ✅ Approve
@@ -723,18 +830,22 @@ export default function AdminCustomerSongDetails() {
                 disabled={actionLoading}
                 onClick={rejectSong}
                 style={{
-                  background: "#dc2626",
+                  background:
+                    "#dc2626",
                   color: "#fff",
                   border: "none",
-                  borderRadius: "8px",
-                  padding: "11px 16px",
-                  cursor: actionLoading
-                    ? "not-allowed"
-                    : "pointer",
-                  fontWeight: "800",
-                  opacity: actionLoading
-                    ? 0.6
-                    : 1,
+                  borderRadius: "9px",
+                  padding:
+                    "11px 17px",
+                  cursor:
+                    actionLoading
+                      ? "not-allowed"
+                      : "pointer",
+                  fontWeight: "900",
+                  opacity:
+                    actionLoading
+                      ? 0.6
+                      : 1,
                 }}
               >
                 ❌ Reject
@@ -744,40 +855,45 @@ export default function AdminCustomerSongDetails() {
                 disabled={actionLoading}
                 onClick={deleteSong}
                 style={{
-                  background: "#111827",
+                  background:
+                    "#111827",
                   color: "#fff",
                   border: "none",
-                  borderRadius: "8px",
-                  padding: "11px 16px",
-                  cursor: actionLoading
-                    ? "not-allowed"
-                    : "pointer",
-                  fontWeight: "800",
-                  opacity: actionLoading
-                    ? 0.6
-                    : 1,
+                  borderRadius: "9px",
+                  padding:
+                    "11px 17px",
+                  cursor:
+                    actionLoading
+                      ? "not-allowed"
+                      : "pointer",
+                  fontWeight: "900",
+                  opacity:
+                    actionLoading
+                      ? 0.6
+                      : 1,
                 }}
               >
                 🗑️ Delete
               </button>
             </div>
 
-            {/* REJECTION */}
+            {/* REJECTION BOX */}
             {song.status ===
               "Rejected" && (
               <div
                 style={{
-                  marginTop: "22px",
-                  background: "#fef2f2",
+                  marginTop: "20px",
+                  background:
+                    "#fff1f2",
                   border:
-                    "1px solid #fecaca",
-                  borderRadius: "10px",
-                  padding: "15px",
+                    "1px solid #fecdd3",
+                  borderRadius: "12px",
+                  padding: "16px",
                 }}
               >
                 <div
                   style={{
-                    color: "#991b1b",
+                    color: "#be123c",
                     fontWeight: "900",
                     marginBottom: "6px",
                   }}
@@ -787,8 +903,9 @@ export default function AdminCustomerSongDetails() {
 
                 <div
                   style={{
-                    color: "#7f1d1d",
-                    lineHeight: "1.5",
+                    color: "#881337",
+                    lineHeight: "1.6",
+                    fontSize: "14px",
                   }}
                 >
                   {song.rejection_reason ||
@@ -799,33 +916,54 @@ export default function AdminCustomerSongDetails() {
           </div>
         </section>
 
-        {/* FULL SONG INFORMATION */}
+        {/* COMPLETE INFORMATION */}
         <section
           style={{
             marginTop: "22px",
             background: "#fff",
-            borderRadius: "16px",
+            borderRadius: "18px",
             padding: "25px",
             boxShadow:
-              "0 5px 20px rgba(0,0,0,0.05)",
+              "0 8px 30px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #e5e7eb",
           }}
         >
-          <h2
+          <div
             style={{
-              margin: "0 0 20px",
-              fontSize: "22px",
-              fontWeight: "900",
+              marginBottom: "20px",
             }}
           >
-            📋 Complete Song Information
-          </h2>
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: "12px",
+                fontWeight: "900",
+                letterSpacing: "1px",
+                marginBottom: "5px",
+              }}
+            >
+              METADATA
+            </div>
+
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "23px",
+                fontWeight: "900",
+              }}
+            >
+              📋 Complete Song Information
+            </h2>
+          </div>
 
           <div
+            className="info-grid"
             style={{
               display: "grid",
               gridTemplateColumns:
                 "repeat(2, minmax(0, 1fr))",
-              gap: "15px",
+              gap: "14px",
             }}
           >
             <Info
@@ -880,26 +1018,46 @@ export default function AdminCustomerSongDetails() {
           </div>
         </section>
 
-        {/* DOWNLOAD FILES */}
+        {/* DOWNLOAD SECTION */}
         <section
           style={{
             marginTop: "22px",
             background: "#fff",
-            borderRadius: "16px",
+            borderRadius: "18px",
             padding: "25px",
             boxShadow:
-              "0 5px 20px rgba(0,0,0,0.05)",
+              "0 8px 30px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #e5e7eb",
           }}
         >
-          <h2
+          <div
             style={{
-              margin: "0 0 18px",
-              fontSize: "22px",
-              fontWeight: "900",
+              marginBottom: "18px",
             }}
           >
-            📥 Download Files
-          </h2>
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: "12px",
+                fontWeight: "900",
+                letterSpacing: "1px",
+                marginBottom: "5px",
+              }}
+            >
+              FILES
+            </div>
+
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "23px",
+                fontWeight: "900",
+              }}
+            >
+              📥 Download Files
+            </h2>
+          </div>
 
           <div
             style={{
@@ -915,12 +1073,17 @@ export default function AdminCustomerSongDetails() {
                 rel="noreferrer"
                 download
                 style={{
-                  background: "#2563eb",
+                  background:
+                    "#2563eb",
                   color: "#fff",
-                  textDecoration: "none",
-                  padding: "11px 16px",
-                  borderRadius: "8px",
-                  fontWeight: "800",
+                  textDecoration:
+                    "none",
+                  padding:
+                    "12px 18px",
+                  borderRadius: "9px",
+                  fontWeight: "900",
+                  display:
+                    "inline-block",
                 }}
               >
                 🎧 Download Audio
@@ -934,12 +1097,17 @@ export default function AdminCustomerSongDetails() {
                 rel="noreferrer"
                 download
                 style={{
-                  background: "#059669",
+                  background:
+                    "#059669",
                   color: "#fff",
-                  textDecoration: "none",
-                  padding: "11px 16px",
-                  borderRadius: "8px",
-                  fontWeight: "800",
+                  textDecoration:
+                    "none",
+                  padding:
+                    "12px 18px",
+                  borderRadius: "9px",
+                  fontWeight: "900",
+                  display:
+                    "inline-block",
                 }}
               >
                 🖼️ Download Cover
@@ -949,18 +1117,29 @@ export default function AdminCustomerSongDetails() {
         </section>
       </main>
 
+      {/* MOBILE RESPONSIVE */}
       <style jsx>{`
-        @media (max-width: 750px) {
+        @media (max-width: 800px) {
+          .song-main-card {
+            grid-template-columns: 1fr !important;
+          }
+
+          .info-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 520px) {
           main {
-            padding: 18px 12px !important;
+            padding: 18px 12px 45px !important;
           }
 
-          section[style*="300px minmax"] {
-            grid-template-columns: 1fr !important;
+          header {
+            padding: 15px !important;
           }
 
-          div[style*="repeat(2, minmax(0, 1fr))"] {
-            grid-template-columns: 1fr !important;
+          .song-main-card {
+            padding: 17px !important;
           }
         }
       `}</style>
@@ -978,18 +1157,22 @@ function Info({
   return (
     <div
       style={{
-        background: "#f8fafc",
-        border: "1px solid #e5e7eb",
-        borderRadius: "10px",
+        background:
+          "linear-gradient(135deg,#f8fafc,#ffffff)",
+        border:
+          "1px solid #e5e7eb",
+        borderRadius: "12px",
         padding: "15px",
       }}
     >
       <div
         style={{
           color: "#6b7280",
-          fontSize: "12px",
-          fontWeight: "800",
-          textTransform: "uppercase",
+          fontSize: "11px",
+          fontWeight: "900",
+          textTransform:
+            "uppercase",
+          letterSpacing: "0.7px",
           marginBottom: "6px",
         }}
       >
@@ -1000,7 +1183,9 @@ function Info({
         style={{
           fontSize: "15px",
           fontWeight: "800",
-          wordBreak: "break-word",
+          wordBreak:
+            "break-word",
+          color: "#111827",
         }}
       >
         {value || "—"}
