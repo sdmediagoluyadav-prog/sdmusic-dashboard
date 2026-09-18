@@ -2,1149 +2,976 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabase";
+import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 
 type Song = {
   id: number;
-  song_title: string;
-  artist_name: string;
+  song_title: string | null;
+  artist_name: string | null;
   album_name: string | null;
+  singer_name?: string | null;
+  composer?: string | null;
+  lyricist?: string | null;
+  genre?: string | null;
+  language?: string | null;
+  release_date?: string | null;
   cover_url: string | null;
   audio_url: string | null;
   status: string | null;
   rejection_reason: string | null;
 };
 
-type SubLabel = {
+type Customer = {
   id: number;
-  name: string;
+  customer_name: string | null;
+  label_name: string | null;
 };
 
 export default function CustomerDashboard() {
   const router = useRouter();
 
+  const [customer, setCustomer] = useState<Customer | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const [customerName, setCustomerName] = useState("");
-  const [labelName, setLabelName] = useState("");
-
   const [activeSection, setActiveSection] = useState("Dashboard");
 
-  const [subLabels, setSubLabels] = useState<SubLabel[]>([]);
-  const [newSubLabel, setNewSubLabel] = useState("");
-
-  useEffect(() => {
-    loadCustomerDashboard();
-  }, []);
-
-  async function loadCustomerDashboard() {
-    setLoading(true);
-
+  const loadDashboard = async () => {
     try {
+      setLoading(true);
+
+      // Logged-in user
       const {
         data: { session },
+        error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (!session) {
-        router.push("/login");
+      if (sessionError || !session) {
+        router.replace("/login");
         return;
       }
 
-      // CUSTOMER ACCOUNT
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .select("id, customer_name, label_name")
-        .eq("auth_user_id", session.user.id)
-        .single();
+      // Find customer account
+      const { data: customerData, error: customerError } =
+        await supabase
+          .from("customers")
+          .select("id, customer_name, label_name")
+          .eq("auth_user_id", session.user.id)
+          .single();
 
-      if (customerError || !customer) {
-        console.error("Customer error:", customerError);
-
-        alert("Customer account नहीं मिला ❌");
-
-        await supabase.auth.signOut();
-        router.push("/login");
+      if (customerError || !customerData) {
+        alert("Customer account nahi mila ❌");
+        router.replace("/login");
         return;
       }
 
-      setCustomerName(customer.customer_name || "");
-      setLabelName(customer.label_name || "");
+      setCustomer(customerData);
 
-      // CUSTOMER SONGS
+      // Get customer's song IDs
       const { data: customerSongs, error: customerSongsError } =
         await supabase
           .from("customer_songs")
           .select("song_id")
-          .eq("customer_id", customer.id);
+          .eq("customer_id", customerData.id);
 
       if (customerSongsError) {
-        console.error(
-          "Customer songs error:",
-          customerSongsError
-        );
-
+        console.error(customerSongsError);
         setSongs([]);
-        setLoading(false);
         return;
       }
 
-      if (!customerSongs || customerSongs.length === 0) {
+      const songIds = (customerSongs || [])
+        .map((item) => item.song_id)
+        .filter(Boolean);
+
+      if (songIds.length === 0) {
         setSongs([]);
-        setLoading(false);
         return;
       }
 
-      const songIds = customerSongs.map(
-        (item) => item.song_id
+      // Get songs
+      const { data: songsData, error: songsError } = await supabase
+        .from("songs")
+        .select(
+          `
+          id,
+          song_title,
+          artist_name,
+          album_name,
+          singer_name,
+          composer,
+          lyricist,
+          genre,
+          language,
+          release_date,
+          cover_url,
+          audio_url,
+          status,
+          rejection_reason
+        `
+        )
+        .in("id", songIds)
+        .order("id", { ascending: false });
+
+      if (songsError) {
+        console.error(songsError);
+        setSongs([]);
+        return;
+      }
+
+      // Create signed URLs
+      const songsWithUrls: Song[] = await Promise.all(
+        (songsData || []).map(async (song) => {
+          let coverUrl = song.cover_url;
+          let audioUrl = song.audio_url;
+
+          // Cover signed URL
+          if (song.cover_url) {
+            if (song.cover_url.startsWith("http")) {
+              coverUrl = song.cover_url;
+            } else {
+              const { data: coverData } = await supabase.storage
+                .from("songs")
+                .createSignedUrl(song.cover_url, 60 * 60);
+
+              if (coverData?.signedUrl) {
+                coverUrl = coverData.signedUrl;
+              }
+            }
+          }
+
+          // Audio signed URL
+          if (song.audio_url) {
+            if (song.audio_url.startsWith("http")) {
+              audioUrl = song.audio_url;
+            } else {
+              const { data: audioData } = await supabase.storage
+                .from("songs")
+                .createSignedUrl(song.audio_url, 60 * 60);
+
+              if (audioData?.signedUrl) {
+                audioUrl = audioData.signedUrl;
+              }
+            }
+          }
+
+          return {
+            ...song,
+            cover_url: coverUrl,
+            audio_url: audioUrl,
+          };
+        })
       );
 
-      // SONGS
-      const { data: songData, error: songError } =
-        await supabase
-          .from("songs")
-          .select(
-            "id, song_title, artist_name, album_name, cover_url, audio_url, status, rejection_reason"
-          )
-          .in("id", songIds)
-          .order("id", { ascending: false });
-
-      if (songError) {
-        console.error("Song error:", songError);
-
-        alert(
-          "Songs load nahi ho paaye ❌\n\n" +
-            songError.message
-        );
-
-        setSongs([]);
-      } else {
-        setSongs(songData || []);
-      }
+      setSongs(songsWithUrls);
     } catch (error) {
-      console.error("Dashboard error:", error);
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    setLoading(false);
-  }
+  useEffect(() => {
+    loadDashboard();
+  }, []);
 
-  async function logout() {
-    await supabase.auth.signOut();
-    router.push("/login");
-  }
+  const totalSongs = songs.length;
 
-  function addSubLabel() {
-    const name = newSubLabel.trim();
+  const approvedSongs = songs.filter(
+    (song) => song.status === "Approved"
+  ).length;
 
-    if (!name) {
-      alert("Sub Label ka naam likhiye.");
-      return;
-    }
+  const pendingSongs = songs.filter(
+    (song) => song.status === "Pending"
+  ).length;
 
-    const newItem: SubLabel = {
-      id: Date.now(),
-      name,
-    };
+  const rejectedSongs = songs.filter(
+    (song) => song.status === "Rejected"
+  ).length;
 
-    setSubLabels((old) => [...old, newItem]);
-    setNewSubLabel("");
+  const artists = useMemo(() => {
+    return new Set(
+      songs
+        .map((song) => song.artist_name)
+        .filter((artist) => artist && artist.trim() !== "")
+    ).size;
+  }, [songs]);
 
-    alert(
-      "Sub Label add ho gaya ✅\n\nNote: Abhi ye dashboard me temporary hai. Database me permanent save karna next step me karenge."
-    );
-  }
+  const albums = useMemo(() => {
+    return new Set(
+      songs
+        .map((song) => song.album_name)
+        .filter((album) => album && album.trim() !== "")
+    ).size;
+  }, [songs]);
 
-  function removeSubLabel(id: number) {
-    setSubLabels((old) =>
-      old.filter((item) => item.id !== id)
-    );
-  }
-
-  function getStatusStyle(status: string | null) {
+  const getStatusStyle = (status: string | null) => {
     if (status === "Approved") {
       return {
-        background: "#052e16",
-        color: "#4ade80",
-        border: "1px solid #166534",
+        background: "#dcfce7",
+        color: "#166534",
       };
     }
 
     if (status === "Rejected") {
       return {
-        background: "#450a0a",
-        color: "#f87171",
-        border: "1px solid #991b1b",
+        background: "#fee2e2",
+        color: "#991b1b",
       };
     }
 
     return {
-      background: "#422006",
-      color: "#fbbf24",
-      border: "1px solid #92400e",
+      background: "#fef3c7",
+      color: "#92400e",
     };
-  }
+  };
 
-  function getStatusText(status: string | null) {
-    if (status === "Approved") return "🟢 Approved";
-    if (status === "Rejected") return "🔴 Rejected";
-
-    return "🟠 Pending";
-  }
-
-  const artists = useMemo(() => {
-    const names = songs
-      .map((song) => song.artist_name?.trim())
-      .filter(Boolean);
-
-    return [...new Set(names)];
-  }, [songs]);
-
-  const albums = useMemo(() => {
-    const names = songs
-      .map((song) => song.album_name?.trim())
-      .filter(Boolean);
-
-    return [...new Set(names)];
-  }, [songs]);
-
-  const approvedSongs = useMemo(() => {
-    return songs.filter(
-      (song) => song.status === "Approved"
-    ).length;
-  }, [songs]);
-
-  // फिलहाल royalty database में नहीं है
-  const totalRoyalty = 0;
+  const navItems = [
+    "Dashboard",
+    "My Songs",
+    "Royalty",
+    "Artists",
+    "Albums",
+    "Sub Labels",
+  ];
 
   if (loading) {
     return (
-      <main
+      <div
         style={{
           minHeight: "100vh",
-          background: "#020617",
+          background: "#0f172a",
           color: "white",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "Arial, sans-serif",
+          fontSize: "18px",
         }}
       >
         Loading Customer Dashboard... 🔐
-      </main>
+      </div>
     );
   }
 
   return (
-    <main
+    <div
       style={{
         minHeight: "100vh",
-        background: "#020617",
-        color: "white",
-        fontFamily: "Arial, sans-serif",
+        background: "#f3f4f6",
+        color: "#111827",
+        display: "flex",
+        fontFamily:
+          "Arial, Helvetica, sans-serif",
       }}
     >
-      <div
+      {/* SIDEBAR */}
+      <aside
         style={{
-          display: "flex",
+          width: "250px",
           minHeight: "100vh",
+          background: "#111827",
+          color: "white",
+          padding: "20px 15px",
+          boxSizing: "border-box",
+          position: "sticky",
+          top: 0,
+          alignSelf: "flex-start",
         }}
       >
-        {/* ================= SIDEBAR ================= */}
-
-        <aside
+        {/* LOGO */}
+        <div
           style={{
-            width: "240px",
-            background: "#0f172a",
-            borderRight: "1px solid #1e293b",
-            padding: "20px 15px",
-            position: "fixed",
-            left: 0,
-            top: 0,
-            bottom: 0,
-            overflowY: "auto",
-            zIndex: 10,
+            padding: "5px",
+            marginBottom: "30px",
+            textAlign: "center",
           }}
         >
-          {/* LOGO */}
-
-          <div
+          <img
+            src="/sd-logo.png"
+            alt="SD Media Entertainment"
             style={{
-              textAlign: "center",
-              marginBottom: "25px",
+              width: "150px",
+              height: "150px",
+              objectFit: "contain",
+              display: "block",
+              margin: "0 auto 8px",
+            }}
+          />
+
+          <p
+            style={{
+              margin: 0,
+              color: "#9ca3af",
+              fontSize: "13px",
             }}
           >
-            <img
-              src="/sd-logo.png"
-              alt="SD Media Entertainment"
-              style={{
-                width: "100px",
-                height: "100px",
-                objectFit: "contain",
-                display: "block",
-                margin: "0 auto 8px",
-              }}
-            />
+            Music Content Management
+          </p>
+        </div>
 
-            <p
-              style={{
-                margin: 0,
-                color: "#94a3b8",
-                fontSize: "11px",
-              }}
-            >
-              Music Content Management
-            </p>
+        {/* CUSTOMER INFO */}
+        <div
+          style={{
+            background: "#1f2937",
+            padding: "12px",
+            borderRadius: "10px",
+            marginBottom: "20px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "14px",
+              fontWeight: "700",
+              color: "white",
+            }}
+          >
+            {customer?.customer_name || "Customer"}
           </div>
 
-          {/* CUSTOMER */}
-
           <div
             style={{
-              background: "#020617",
-              border: "1px solid #1e293b",
-              borderRadius: "10px",
-              padding: "12px",
-              marginBottom: "20px",
+              fontSize: "12px",
+              color: "#9ca3af",
+              marginTop: "3px",
             }}
           >
-            <p
-              style={{
-                margin: 0,
-                color: "#94a3b8",
-                fontSize: "11px",
-              }}
-            >
-              CUSTOMER
-            </p>
+            {customer?.label_name || "Label"}
+          </div>
+        </div>
 
-            <p
-              style={{
-                margin: "5px 0 0",
-                fontWeight: "600",
-                fontSize: "14px",
-              }}
-            >
-              {customerName || "Customer"}
-            </p>
+        {/* NAVIGATION */}
+        <div>
+          {navItems.map((item) => {
+            const active = activeSection === item;
 
-            {labelName && (
-              <p
+            return (
+              <button
+                key={item}
+                onClick={() => setActiveSection(item)}
                 style={{
-                  margin: "4px 0 0",
-                  color: "#64748b",
-                  fontSize: "12px",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "12px 14px",
+                  marginBottom: "6px",
+                  border: "none",
+                  borderRadius: "8px",
+                  background: active
+                    ? "#2563eb"
+                    : "transparent",
+                  color: active
+                    ? "white"
+                    : "#d1d5db",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: active ? "700" : "500",
                 }}
               >
-                {labelName}
-              </p>
-            )}
-          </div>
+                {item === "Dashboard" && "🏠 "}
+                {item === "My Songs" && "🎵 "}
+                {item === "Royalty" && "💰 "}
+                {item === "Artists" && "🎤 "}
+                {item === "Albums" && "💿 "}
+                {item === "Sub Labels" && "🏷️ "}
+                {item}
+              </button>
+            );
+          })}
+        </div>
 
-          {/* MENU */}
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "7px",
-            }}
-          >
-            <button
-              onClick={() => setActiveSection("Dashboard")}
-              style={menuStyle(activeSection === "Dashboard")}
-            >
-              🏠 Dashboard
-            </button>
-
-            <button
-              onClick={() => setActiveSection("Songs")}
-              style={menuStyle(activeSection === "Songs")}
-            >
-              🎵 My Songs
-            </button>
-
-            <button
-              onClick={() => setActiveSection("Royalty")}
-              style={menuStyle(activeSection === "Royalty")}
-            >
-              💰 Royalty
-            </button>
-
-            <button
-              onClick={() => setActiveSection("Artists")}
-              style={menuStyle(activeSection === "Artists")}
-            >
-              🎤 Artists
-            </button>
-
-            <button
-              onClick={() => setActiveSection("Albums")}
-              style={menuStyle(activeSection === "Albums")}
-            >
-              💿 Albums
-            </button>
-
-            <button
-              onClick={() => setActiveSection("Sub Labels")}
-              style={menuStyle(activeSection === "Sub Labels")}
-            >
-              🏷️ Sub Labels
-            </button>
-
-            <button
-              onClick={() => router.push("/upload")}
-              style={{
-                width: "100%",
-                textAlign: "left",
-                padding: "12px 14px",
-                borderRadius: "8px",
-                border: "none",
-                background: "#2563eb",
-                color: "white",
-                cursor: "pointer",
-                fontWeight: "600",
-                fontSize: "14px",
-                marginTop: "8px",
-              }}
-            >
-              ➕ Upload Song
-            </button>
-          </div>
-
-          {/* LOGOUT */}
-
-          <button
-            onClick={logout}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              padding: "12px 14px",
-              borderRadius: "8px",
-              border: "1px solid #7f1d1d",
-              background: "#450a0a",
-              color: "#fca5a5",
-              cursor: "pointer",
-              fontWeight: "600",
-              fontSize: "14px",
-              marginTop: "30px",
-            }}
-          >
-            🚪 Logout
-          </button>
-        </aside>
-
-        {/* ================= MAIN ================= */}
-
-        <section
+        {/* UPLOAD */}
+        <Link
+          href="/upload"
           style={{
-            marginLeft: "240px",
-            width: "calc(100% - 240px)",
-            padding: "25px",
+            display: "block",
+            textDecoration: "none",
+            textAlign: "center",
+            background: "#16a34a",
+            color: "white",
+            padding: "12px",
+            borderRadius: "8px",
+            marginTop: "20px",
+            fontSize: "14px",
+            fontWeight: "700",
           }}
         >
-          <div
+          ⬆️ Upload Song
+        </Link>
+
+        {/* LOGOUT */}
+        <button
+          onClick={async () => {
+            await supabase.auth.signOut();
+            router.replace("/login");
+          }}
+          style={{
+            width: "100%",
+            marginTop: "12px",
+            padding: "11px",
+            border: "1px solid #374151",
+            borderRadius: "8px",
+            background: "transparent",
+            color: "#fca5a5",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          🚪 Logout
+        </button>
+      </aside>
+
+      {/* MAIN CONTENT */}
+      <main
+        style={{
+          flex: 1,
+          padding: "30px",
+          minWidth: 0,
+        }}
+      >
+        {/* HEADER */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "15px",
+            marginBottom: "25px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "28px",
+                fontWeight: "800",
+              }}
+            >
+              {activeSection}
+            </h1>
+
+            <p
+              style={{
+                margin: "6px 0 0",
+                color: "#6b7280",
+                fontSize: "14px",
+              }}
+            >
+              Welcome,{" "}
+              <strong>
+                {customer?.customer_name || "Customer"}
+              </strong>
+            </p>
+          </div>
+
+          <Link
+            href="/upload"
             style={{
-              maxWidth: "1250px",
-              margin: "0 auto",
+              background: "#2563eb",
+              color: "white",
+              textDecoration: "none",
+              padding: "11px 18px",
+              borderRadius: "8px",
+              fontWeight: "700",
+              fontSize: "14px",
             }}
           >
-            {/* HEADER */}
+            + Upload New Song
+          </Link>
+        </div>
 
+        {/* DASHBOARD */}
+        {activeSection === "Dashboard" && (
+          <>
+            {/* STATS */}
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "15px",
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: "16px",
                 marginBottom: "25px",
               }}
             >
-              <div>
-                <h1
-                  style={{
-                    margin: 0,
-                    fontSize: "30px",
-                  }}
-                >
-                  {activeSection}
-                </h1>
+              <StatCard
+                title="Total Songs"
+                value={totalSongs}
+                icon="🎵"
+              />
 
-                <p
-                  style={{
-                    margin: "7px 0 0",
-                    color: "#94a3b8",
-                  }}
-                >
-                  Welcome, {customerName || "Customer"}
-                </p>
-              </div>
+              <StatCard
+                title="Approved Songs"
+                value={approvedSongs}
+                icon="✅"
+              />
 
-              <button
-                onClick={loadCustomerDashboard}
-                style={{
-                  background: "#0f172a",
-                  color: "#cbd5e1",
-                  border: "1px solid #334155",
-                  padding: "10px 15px",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                }}
-              >
-                🔄 Refresh
-              </button>
+              <StatCard
+                title="Pending Songs"
+                value={pendingSongs}
+                icon="⏳"
+              />
+
+              <StatCard
+                title="Rejected Songs"
+                value={rejectedSongs}
+                icon="❌"
+              />
+
+              <StatCard
+                title="Artists"
+                value={artists}
+                icon="🎤"
+              />
+
+              <StatCard
+                title="Albums"
+                value={albums}
+                icon="💿"
+              />
+
+              <StatCard
+                title="Royalty"
+                value="₹0.00"
+                icon="💰"
+              />
+
+              <StatCard
+                title="Sub Labels"
+                value="0"
+                icon="🏷️"
+              />
             </div>
 
-            {/* ================= DASHBOARD ================= */}
+            {/* QUICK ACTIONS */}
+            <div
+              style={{
+                background: "white",
+                borderRadius: "12px",
+                padding: "20px",
+                marginBottom: "25px",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                  fontSize: "19px",
+                }}
+              >
+                Quick Actions
+              </h2>
 
-            {activeSection === "Dashboard" && (
-              <>
-                {/* STATS */}
-
-                <div
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Link
+                  href="/upload"
                   style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(200px, 1fr))",
-                    gap: "15px",
-                    marginBottom: "30px",
+                    background: "#2563eb",
+                    color: "white",
+                    textDecoration: "none",
+                    padding: "11px 16px",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                    fontWeight: "700",
                   }}
                 >
-                  <StatCard
-                    title="Total Songs"
-                    value={songs.length.toString()}
-                    icon="🎵"
-                  />
+                  🎵 Upload Song
+                </Link>
 
-                  <StatCard
-                    title="Approved Songs"
-                    value={approvedSongs.toString()}
-                    icon="✅"
-                  />
-
-                  <StatCard
-                    title="Artists"
-                    value={artists.length.toString()}
-                    icon="🎤"
-                  />
-
-                  <StatCard
-                    title="Albums"
-                    value={albums.length.toString()}
-                    icon="💿"
-                  />
-
-                  <StatCard
-                    title="Royalty"
-                    value={`₹${totalRoyalty.toFixed(2)}`}
-                    icon="💰"
-                  />
-
-                  <StatCard
-                    title="Sub Labels"
-                    value={subLabels.length.toString()}
-                    icon="🏷️"
-                  />
-                </div>
-
-                {/* QUICK ACTIONS */}
-
-                <div
+                <button
+                  onClick={() => setActiveSection("My Songs")}
                   style={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
-                    borderRadius: "14px",
-                    padding: "20px",
-                    marginBottom: "25px",
+                    background: "#111827",
+                    color: "white",
+                    border: "none",
+                    padding: "11px 16px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "700",
                   }}
                 >
-                  <h2
-                    style={{
-                      marginTop: 0,
-                      marginBottom: "15px",
-                    }}
-                  >
-                    Quick Actions
-                  </h2>
+                  📋 My Songs
+                </button>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(180px, 1fr))",
-                      gap: "12px",
-                    }}
-                  >
-                    <QuickButton
-                      text="🎵 View My Songs"
-                      onClick={() =>
-                        setActiveSection("Songs")
-                      }
-                    />
+                <button
+                  onClick={loadDashboard}
+                  style={{
+                    background: "#f3f4f6",
+                    color: "#111827",
+                    border: "1px solid #d1d5db",
+                    padding: "11px 16px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "700",
+                  }}
+                >
+                  🔄 Refresh
+                </button>
+              </div>
+            </div>
 
-                    <QuickButton
-                      text="💰 View Royalty"
-                      onClick={() =>
-                        setActiveSection("Royalty")
-                      }
-                    />
-
-                    <QuickButton
-                      text="🎤 Artists"
-                      onClick={() =>
-                        setActiveSection("Artists")
-                      }
-                    />
-
-                    <QuickButton
-                      text="💿 Albums"
-                      onClick={() =>
-                        setActiveSection("Albums")
-                      }
-                    />
-
-                    <QuickButton
-                      text="🏷️ Sub Labels"
-                      onClick={() =>
-                        setActiveSection("Sub Labels")
-                      }
-                    />
-
-                    <QuickButton
-                      text="➕ Upload Song"
-                      onClick={() =>
-                        router.push("/upload")
-                      }
-                    />
-                  </div>
-                </div>
-
-                {/* RECENT SONGS */}
-
+            {/* RECENT SONGS */}
+            <section
+              style={{
+                background: "white",
+                borderRadius: "12px",
+                padding: "20px",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "18px",
+                }}
+              >
                 <h2
                   style={{
-                    marginBottom: "15px",
+                    margin: 0,
+                    fontSize: "19px",
                   }}
                 >
                   Recent Songs
                 </h2>
 
-                <SongGrid
-                  songs={songs.slice(0, 6)}
-                  getStatusStyle={getStatusStyle}
-                  getStatusText={getStatusText}
-                />
-              </>
-            )}
-
-            {/* ================= SONGS ================= */}
-
-            {activeSection === "Songs" && (
-              <>
-                <div
+                <button
+                  onClick={() => setActiveSection("My Songs")}
                   style={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
-                    borderRadius: "12px",
-                    padding: "18px",
-                    marginBottom: "20px",
+                    border: "none",
+                    background: "transparent",
+                    color: "#2563eb",
+                    cursor: "pointer",
+                    fontWeight: "700",
                   }}
                 >
-                  <h2 style={{ margin: 0 }}>
-                    My Songs
-                  </h2>
+                  View All →
+                </button>
+              </div>
 
-                  <p
-                    style={{
-                      color: "#94a3b8",
-                      marginBottom: 0,
-                    }}
-                  >
-                    Aapke account ke saare songs yahan
-                    दिखाई देंगे.
-                  </p>
-                </div>
-
-                {songs.length === 0 ? (
-                  <EmptyState
-                    text="Abhi koi song available nahi hai."
-                    onClick={() =>
-                      router.push("/upload")
-                    }
-                  />
-                ) : (
-                  <SongGrid
-                    songs={songs}
-                    getStatusStyle={getStatusStyle}
-                    getStatusText={getStatusText}
-                  />
-                )}
-              </>
-            )}
-
-            {/* ================= ROYALTY ================= */}
-
-            {activeSection === "Royalty" && (
-              <>
+              {songs.length === 0 ? (
+                <EmptySongs />
+              ) : (
                 <div
                   style={{
                     display: "grid",
                     gridTemplateColumns:
-                      "repeat(auto-fit, minmax(250px, 1fr))",
-                    gap: "18px",
-                    marginBottom: "25px",
+                      "repeat(auto-fit, minmax(260px, 1fr))",
+                    gap: "16px",
                   }}
                 >
-                  <StatCard
-                    title="Total Royalty"
-                    value={`₹${totalRoyalty.toFixed(2)}`}
-                    icon="💰"
-                  />
-
-                  <StatCard
-                    title="Approved Songs"
-                    value={approvedSongs.toString()}
-                    icon="✅"
-                  />
-                </div>
-
-                <div
-                  style={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
-                    borderRadius: "14px",
-                    padding: "30px",
-                  }}
-                >
-                  <h2 style={{ marginTop: 0 }}>
-                    Royalty Details
-                  </h2>
-
-                  <p
-                    style={{
-                      color: "#94a3b8",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Royalty amount abhi ₹0.00 दिख रहा है
-                    क्योंकि database में अभी royalty/earning
-                    data connect नहीं किया गया है.
-                  </p>
-
-                  <div
-                    style={{
-                      marginTop: "20px",
-                      padding: "20px",
-                      background: "#020617",
-                      borderRadius: "12px",
-                      border: "1px solid #1e293b",
-                    }}
-                  >
-                    <p
-                      style={{
-                        color: "#64748b",
-                        margin: 0,
-                        fontSize: "13px",
-                      }}
-                    >
-                      TOTAL ROYALTY
-                    </p>
-
-                    <h1
-                      style={{
-                        margin: "8px 0 0",
-                        fontSize: "35px",
-                      }}
-                    >
-                      ₹0.00
-                    </h1>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* ================= ARTISTS ================= */}
-
-            {activeSection === "Artists" && (
-              <>
-                <div
-                  style={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
-                    borderRadius: "14px",
-                    padding: "20px",
-                  }}
-                >
-                  <h2 style={{ marginTop: 0 }}>
-                    My Artists
-                  </h2>
-
-                  {artists.length === 0 ? (
-                    <p
-                      style={{
-                        color: "#94a3b8",
-                      }}
-                    >
-                      अभी कोई artist नहीं मिला.
-                    </p>
-                  ) : (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fill, minmax(220px, 1fr))",
-                        gap: "15px",
-                      }}
-                    >
-                      {artists.map((artist, index) => (
-                        <div
-                          key={artist}
-                          style={{
-                            background: "#020617",
-                            border: "1px solid #1e293b",
-                            borderRadius: "12px",
-                            padding: "18px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "28px",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            🎤
-                          </div>
-
-                          <h3
-                            style={{
-                              margin: 0,
-                              fontSize: "17px",
-                            }}
-                          >
-                            {artist}
-                          </h3>
-
-                          <p
-                            style={{
-                              margin: "6px 0 0",
-                              color: "#64748b",
-                              fontSize: "13px",
-                            }}
-                          >
-                            Artist #{index + 1}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* ================= ALBUMS ================= */}
-
-            {activeSection === "Albums" && (
-              <>
-                <div
-                  style={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
-                    borderRadius: "14px",
-                    padding: "20px",
-                  }}
-                >
-                  <h2 style={{ marginTop: 0 }}>
-                    My Albums
-                  </h2>
-
-                  {albums.length === 0 ? (
-                    <p
-                      style={{
-                        color: "#94a3b8",
-                      }}
-                    >
-                      अभी कोई album नहीं मिला.
-                    </p>
-                  ) : (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fill, minmax(220px, 1fr))",
-                        gap: "15px",
-                      }}
-                    >
-                      {albums.map((album, index) => (
-                        <div
-                          key={album}
-                          style={{
-                            background: "#020617",
-                            border: "1px solid #1e293b",
-                            borderRadius: "12px",
-                            padding: "18px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "28px",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            💿
-                          </div>
-
-                          <h3
-                            style={{
-                              margin: 0,
-                              fontSize: "17px",
-                            }}
-                          >
-                            {album}
-                          </h3>
-
-                          <p
-                            style={{
-                              margin: "6px 0 0",
-                              color: "#64748b",
-                              fontSize: "13px",
-                            }}
-                          >
-                            Album #{index + 1}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* ================= SUB LABELS ================= */}
-
-            {activeSection === "Sub Labels" && (
-              <>
-                <div
-                  style={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
-                    borderRadius: "14px",
-                    padding: "20px",
-                    marginBottom: "20px",
-                  }}
-                >
-                  <h2 style={{ marginTop: 0 }}>
-                    Sub Labels
-                  </h2>
-
-                  <p
-                    style={{
-                      color: "#94a3b8",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Yahan se aap apne Sub Labels manage
-                    kar sakte hain.
-                  </p>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "10px",
-                      flexWrap: "wrap",
-                      marginTop: "20px",
-                    }}
-                  >
-                    <input
-                      value={newSubLabel}
-                      onChange={(e) =>
-                        setNewSubLabel(e.target.value)
-                      }
-                      placeholder="Sub Label Name"
-                      style={{
-                        flex: 1,
-                        minWidth: "220px",
-                        padding: "12px",
-                        borderRadius: "8px",
-                        border: "1px solid #334155",
-                        background: "#020617",
-                        color: "white",
-                        outline: "none",
-                      }}
+                  {songs.slice(0, 6).map((song) => (
+                    <SongCard
+                      key={song.id}
+                      song={song}
+                      getStatusStyle={getStatusStyle}
+                      router={router}
                     />
-
-                    <button
-                      onClick={addSubLabel}
-                      style={{
-                        background: "#2563eb",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "8px",
-                        padding: "12px 20px",
-                        cursor: "pointer",
-                        fontWeight: "600",
-                      }}
-                    >
-                      + Add Sub Label
-                    </button>
-                  </div>
+                  ))}
                 </div>
+              )}
+            </section>
+          </>
+        )}
 
-                {subLabels.length === 0 ? (
+        {/* MY SONGS */}
+        {activeSection === "My Songs" && (
+          <section
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              padding: "20px",
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "20px",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "21px",
+                  }}
+                >
+                  My Songs
+                </h2>
+
+                <p
+                  style={{
+                    color: "#6b7280",
+                    margin: "5px 0 0",
+                    fontSize: "13px",
+                  }}
+                >
+                  Aapke account ke saare uploaded songs
+                </p>
+              </div>
+
+              <Link
+                href="/upload"
+                style={{
+                  background: "#16a34a",
+                  color: "white",
+                  textDecoration: "none",
+                  padding: "10px 15px",
+                  borderRadius: "8px",
+                  fontWeight: "700",
+                  fontSize: "14px",
+                }}
+              >
+                + Upload Song
+              </Link>
+            </div>
+
+            {songs.length === 0 ? (
+              <EmptySongs />
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(280px, 1fr))",
+                  gap: "18px",
+                }}
+              >
+                {songs.map((song) => (
+                  <SongCard
+                    key={song.id}
+                    song={song}
+                    getStatusStyle={getStatusStyle}
+                    router={router}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ROYALTY */}
+        {activeSection === "Royalty" && (
+          <section
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              padding: "30px",
+              border: "1px solid #e5e7eb",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "55px" }}>💰</div>
+
+            <h2>Royalty</h2>
+
+            <p
+              style={{
+                color: "#6b7280",
+              }}
+            >
+              Royalty section abhi setup nahi hua hai.
+            </p>
+
+            <div
+              style={{
+                margin: "20px auto",
+                maxWidth: "300px",
+                background: "#f9fafb",
+                padding: "20px",
+                borderRadius: "12px",
+              }}
+            >
+              <div
+                style={{
+                  color: "#6b7280",
+                  fontSize: "13px",
+                }}
+              >
+                Total Royalty
+              </div>
+
+              <div
+                style={{
+                  fontSize: "30px",
+                  fontWeight: "800",
+                  marginTop: "5px",
+                }}
+              >
+                ₹0.00
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ARTISTS */}
+        {activeSection === "Artists" && (
+          <section
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              padding: "20px",
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+              }}
+            >
+              Artists
+            </h2>
+
+            {artists === 0 ? (
+              <EmptySongs />
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(200px, 1fr))",
+                  gap: "15px",
+                }}
+              >
+                {Array.from(
+                  new Set(
+                    songs
+                      .map((song) => song.artist_name)
+                      .filter(Boolean)
+                  )
+                ).map((artist) => (
                   <div
+                    key={artist}
                     style={{
-                      background: "#0f172a",
-                      border: "1px solid #1e293b",
-                      borderRadius: "14px",
-                      padding: "35px",
-                      textAlign: "center",
+                      padding: "18px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "10px",
+                      background: "#fafafa",
                     }}
                   >
+                    <div style={{ fontSize: "25px" }}>🎤</div>
+
                     <div
                       style={{
-                        fontSize: "40px",
-                        marginBottom: "10px",
+                        marginTop: "8px",
+                        fontWeight: "700",
                       }}
                     >
-                      🏷️
+                      {artist}
                     </div>
-
-                    <h3 style={{ margin: 0 }}>
-                      No Sub Labels
-                    </h3>
-
-                    <p
-                      style={{
-                        color: "#64748b",
-                      }}
-                    >
-                      Upar se + Add Sub Label karke add
-                      karein.
-                    </p>
                   </div>
-                ) : (
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ALBUMS */}
+        {activeSection === "Albums" && (
+          <section
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              padding: "20px",
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+              }}
+            >
+              Albums
+            </h2>
+
+            {albums === 0 ? (
+              <EmptySongs />
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "15px",
+                }}
+              >
+                {Array.from(
+                  new Set(
+                    songs
+                      .map((song) => song.album_name)
+                      .filter(Boolean)
+                  )
+                ).map((album) => (
                   <div
+                    key={album}
                     style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fill, minmax(220px, 1fr))",
-                      gap: "15px",
+                      padding: "20px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "10px",
+                      background: "#fafafa",
                     }}
                   >
-                    {subLabels.map((subLabel) => (
-                      <div
-                        key={subLabel.id}
-                        style={{
-                          background: "#0f172a",
-                          border: "1px solid #1e293b",
-                          borderRadius: "12px",
-                          padding: "18px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent:
-                              "space-between",
-                            alignItems: "center",
-                            gap: "10px",
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize: "25px",
-                              }}
-                            >
-                              🏷️
-                            </div>
+                    <div style={{ fontSize: "28px" }}>💿</div>
 
-                            <h3
-                              style={{
-                                margin:
-                                  "8px 0 0",
-                              }}
-                            >
-                              {subLabel.name}
-                            </h3>
-                          </div>
-
-                          <button
-                            onClick={() =>
-                              removeSubLabel(
-                                subLabel.id
-                              )
-                            }
-                            style={{
-                              background:
-                                "#450a0a",
-                              color: "#fca5a5",
-                              border:
-                                "1px solid #7f1d1d",
-                              borderRadius: "7px",
-                              padding:
-                                "7px 10px",
-                              cursor:
-                                "pointer",
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        fontWeight: "700",
+                      }}
+                    >
+                      {album}
+                    </div>
                   </div>
-                )}
-              </>
+                ))}
+              </div>
             )}
-          </div>
-        </section>
-      </div>
+          </section>
+        )}
 
-      {/* MOBILE STYLE */}
+        {/* SUB LABELS */}
+        {activeSection === "Sub Labels" && (
+          <section
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              padding: "30px",
+              border: "1px solid #e5e7eb",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "55px" }}>🏷️</div>
 
-      <style jsx>{`
-        @media (max-width: 700px) {
-          aside {
-            width: 100% !important;
-            position: relative !important;
-            min-height: auto !important;
-          }
+            <h2>Sub Labels</h2>
 
-          section {
-            margin-left: 0 !important;
-            width: 100% !important;
-            padding: 15px !important;
-          }
-
-          main > div {
-            display: block !important;
-          }
-        }
-      `}</style>
-    </main>
+            <p
+              style={{
+                color: "#6b7280",
+              }}
+            >
+              Sub Label management feature abhi setup nahi hua hai.
+            </p>
+          </section>
+        )}
+      </main>
+    </div>
   );
 }
 
-/* ================= COMPONENTS ================= */
-
-function menuStyle(active: boolean) {
-  return {
-    width: "100%",
-    textAlign: "left" as const,
-    padding: "12px 14px",
-    borderRadius: "8px",
-    border: active
-      ? "1px solid #2563eb"
-      : "1px solid transparent",
-    background: active
-      ? "#172554"
-      : "transparent",
-    color: active ? "#60a5fa" : "#cbd5e1",
-    cursor: "pointer",
-    fontWeight: active ? "600" : "500",
-    fontSize: "14px",
-  };
-}
+/* =========================
+   STAT CARD
+========================= */
 
 function StatCard({
   title,
@@ -1152,16 +979,17 @@ function StatCard({
   icon,
 }: {
   title: string;
-  value: string;
+  value: string | number;
   icon: string;
 }) {
   return (
     <div
       style={{
-        background: "#0f172a",
-        border: "1px solid #1e293b",
-        borderRadius: "14px",
-        padding: "20px",
+        background: "white",
+        borderRadius: "12px",
+        padding: "18px",
+        border: "1px solid #e5e7eb",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
       }}
     >
       <div
@@ -1171,308 +999,327 @@ function StatCard({
           alignItems: "center",
         }}
       >
-        <div>
-          <p
-            style={{
-              margin: 0,
-              color: "#94a3b8",
-              fontSize: "13px",
-            }}
-          >
-            {title}
-          </p>
-
-          <h2
-            style={{
-              margin: "8px 0 0",
-              fontSize: "27px",
-            }}
-          >
-            {value}
-          </h2>
+        <div
+          style={{
+            color: "#6b7280",
+            fontSize: "13px",
+          }}
+        >
+          {title}
         </div>
 
         <div
           style={{
-            fontSize: "28px",
+            fontSize: "22px",
           }}
         >
           {icon}
         </div>
       </div>
+
+      <div
+        style={{
+          fontSize: "26px",
+          fontWeight: "800",
+          marginTop: "10px",
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
 
-function QuickButton({
-  text,
-  onClick,
-}: {
-  text: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        background: "#020617",
-        color: "#e2e8f0",
-        border: "1px solid #334155",
-        borderRadius: "10px",
-        padding: "14px",
-        cursor: "pointer",
-        textAlign: "left",
-        fontWeight: "600",
-      }}
-    >
-      {text}
-    </button>
-  );
-}
+/* =========================
+   EMPTY SONGS
+========================= */
 
-function EmptyState({
-  text,
-  onClick,
-}: {
-  text: string;
-  onClick: () => void;
-}) {
+function EmptySongs() {
   return (
     <div
       style={{
-        background: "#0f172a",
-        border: "1px solid #1e293b",
-        borderRadius: "14px",
-        padding: "45px 20px",
         textAlign: "center",
+        padding: "50px 20px",
+        color: "#6b7280",
       }}
     >
-      <h2>No Songs Found</h2>
+      <div
+        style={{
+          fontSize: "50px",
+          marginBottom: "10px",
+        }}
+      >
+        🎵
+      </div>
+
+      <h3
+        style={{
+          color: "#111827",
+          margin: "0 0 8px",
+        }}
+      >
+        Abhi koi song nahi hai
+      </h3>
 
       <p
         style={{
-          color: "#94a3b8",
+          margin: 0,
         }}
       >
-        {text}
+        Apna pehla song upload kijiye.
       </p>
 
-      <button
-        onClick={onClick}
+      <Link
+        href="/upload"
         style={{
+          display: "inline-block",
+          marginTop: "18px",
           background: "#2563eb",
           color: "white",
-          border: "none",
+          textDecoration: "none",
+          padding: "10px 18px",
           borderRadius: "8px",
-          padding: "11px 20px",
-          cursor: "pointer",
-          fontWeight: "600",
+          fontWeight: "700",
         }}
       >
         Upload Song
-      </button>
+      </Link>
     </div>
   );
 }
 
-function SongGrid({
-  songs,
+/* =========================
+   SONG CARD
+========================= */
+
+function SongCard({
+  song,
   getStatusStyle,
-  getStatusText,
+  router,
 }: {
-  songs: Song[];
-  getStatusStyle: (status: string | null) => object;
-  getStatusText: (status: string | null) => string;
+  song: Song;
+  getStatusStyle: (status: string | null) => {
+    background: string;
+    color: string;
+  };
+  router: ReturnType<typeof useRouter>;
 }) {
-  if (songs.length === 0) {
-    return (
-      <div
-        style={{
-          background: "#0f172a",
-          border: "1px solid #1e293b",
-          borderRadius: "14px",
-          padding: "40px",
-          textAlign: "center",
-          color: "#94a3b8",
-        }}
-      >
-        No Songs Found
-      </div>
-    );
-  }
+  const statusStyle = getStatusStyle(song.status);
 
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns:
-          "repeat(auto-fill, minmax(280px, 1fr))",
-        gap: "20px",
+        border: "1px solid #e5e7eb",
+        borderRadius: "12px",
+        overflow: "hidden",
+        background: "white",
       }}
     >
-      {songs.map((song) => (
-        <div
-          key={song.id}
-          style={{
-            background: "#0f172a",
-            border: "1px solid #1e293b",
-            borderRadius: "14px",
-            overflow: "hidden",
-          }}
-        >
-          {/* COVER */}
-
-          <div
+      {/* COVER */}
+      <div
+        style={{
+          width: "100%",
+          height: "220px",
+          background: "#f3f4f6",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {song.cover_url ? (
+          <img
+            src={song.cover_url}
+            alt={song.song_title ?? "Song cover"}
             style={{
               width: "100%",
-              aspectRatio: "1 / 1",
-              background: "#020617",
+              height: "100%",
+              objectFit: "cover",
             }}
-          >
-            {song.cover_url ? (
-              <img
-                src={song.cover_url}
-                alt={song.song_title}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  display: "block",
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#64748b",
-                }}
-              >
-                No Cover
-              </div>
-            )}
-          </div>
-
-          {/* CONTENT */}
-
+          />
+        ) : (
           <div
             style={{
-              padding: "16px",
+              fontSize: "55px",
+            }}
+          >
+            🎵
+          </div>
+        )}
+      </div>
+
+      {/* CONTENT */}
+      <div
+        style={{
+          padding: "16px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "10px",
+          }}
+        >
+          <div
+            style={{
+              minWidth: 0,
             }}
           >
             <h3
               style={{
-                margin: "0 0 7px",
-                fontSize: "18px",
+                margin: 0,
+                fontSize: "17px",
+                fontWeight: "800",
+                wordBreak: "break-word",
               }}
             >
-              {song.song_title}
+              {song.song_title || "Untitled Song"}
             </h3>
 
             <p
               style={{
-                margin: "0 0 7px",
-                color: "#94a3b8",
+                margin: "5px 0 0",
+                color: "#6b7280",
+                fontSize: "13px",
               }}
             >
-              Artist: {song.artist_name}
+              {song.artist_name || "Unknown Artist"}
             </p>
+          </div>
 
-            {song.album_name && (
-              <p
-                style={{
-                  margin: "0 0 12px",
-                  color: "#64748b",
-                  fontSize: "13px",
-                }}
-              >
-                Album: {song.album_name}
-              </p>
-            )}
+          <span
+            style={{
+              ...statusStyle,
+              padding: "5px 9px",
+              borderRadius: "999px",
+              fontSize: "11px",
+              fontWeight: "800",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {song.status || "Pending"}
+          </span>
+        </div>
 
-            {/* STATUS */}
+        {/* ALBUM */}
+        {song.album_name && (
+          <div
+            style={{
+              marginTop: "10px",
+              fontSize: "13px",
+              color: "#4b5563",
+            }}
+          >
+            💿 {song.album_name}
+          </div>
+        )}
 
+        {/* EXTRA INFO */}
+        <div
+          style={{
+            marginTop: "12px",
+            display: "grid",
+            gap: "5px",
+            fontSize: "12px",
+            color: "#6b7280",
+          }}
+        >
+          {song.singer_name && (
+            <div>
+              <strong>Singer:</strong> {song.singer_name}
+            </div>
+          )}
+
+          {song.genre && (
+            <div>
+              <strong>Genre:</strong> {song.genre}
+            </div>
+          )}
+
+          {song.language && (
+            <div>
+              <strong>Language:</strong> {song.language}
+            </div>
+          )}
+
+          {song.release_date && (
+            <div>
+              <strong>Release Date:</strong>{" "}
+              {song.release_date}
+            </div>
+          )}
+        </div>
+
+        {/* REJECTION REASON */}
+        {song.status === "Rejected" &&
+          song.rejection_reason && (
             <div
               style={{
-                marginBottom: "12px",
+                marginTop: "14px",
+                padding: "12px",
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "8px",
+                color: "#991b1b",
+                fontSize: "13px",
               }}
             >
-              <span
+              <strong>Rejection Reason:</strong>
+
+              <div
                 style={{
-                  ...getStatusStyle(song.status),
-                  display: "inline-block",
-                  borderRadius: "999px",
-                  padding: "6px 10px",
-                  fontSize: "12px",
-                  fontWeight: "600",
+                  marginTop: "4px",
                 }}
               >
-                {getStatusText(song.status)}
-              </span>
+                {song.rejection_reason}
+              </div>
             </div>
+          )}
 
-            {/* REJECTION REASON */}
-
-            {song.status === "Rejected" &&
-              song.rejection_reason && (
-                <div
-                  style={{
-                    background: "#1c0a0a",
-                    border: "1px solid #7f1d1d",
-                    borderRadius: "8px",
-                    padding: "12px",
-                    marginBottom: "14px",
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: "0 0 5px",
-                      color: "#fca5a5",
-                      fontSize: "12px",
-                      fontWeight: "700",
-                    }}
-                  >
-                    Rejection Reason
-                  </p>
-
-                  <p
-                    style={{
-                      margin: 0,
-                      color: "#fecaca",
-                      fontSize: "13px",
-                      lineHeight: "1.5",
-                    }}
-                  >
-                    {song.rejection_reason}
-                  </p>
-                </div>
-              )}
-
-            {/* AUDIO */}
-
-            {song.audio_url ? (
-              <audio
-                controls
-                src={song.audio_url}
-                style={{
-                  width: "100%",
-                }}
-              />
-            ) : (
-              <p
-                style={{
-                  color: "#64748b",
-                  fontSize: "13px",
-                }}
-              >
-                Audio not available
-              </p>
-            )}
+        {/* AUDIO */}
+        {song.audio_url && (
+          <div
+            style={{
+              marginTop: "14px",
+            }}
+          >
+            <audio
+              controls
+              src={song.audio_url}
+              style={{
+                width: "100%",
+                height: "38px",
+              }}
+            />
           </div>
-        </div>
-      ))}
+        )}
+
+        {/* REJECTED EDIT BUTTON */}
+        {song.status === "Rejected" && (
+          <button
+            onClick={() =>
+              router.push(
+                `/customer-dashboard/edit/${song.id}`
+              )
+            }
+            style={{
+              width: "100%",
+              marginTop: "14px",
+              padding: "10px",
+              border: "none",
+              borderRadius: "8px",
+              background: "#dc2626",
+              color: "white",
+              cursor: "pointer",
+              fontWeight: "700",
+              fontSize: "13px",
+            }}
+          >
+            ✏️ Edit & Resubmit
+          </button>
+        )}
+      </div>
     </div>
   );
 }
