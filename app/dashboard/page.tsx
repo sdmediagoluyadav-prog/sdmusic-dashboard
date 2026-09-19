@@ -43,18 +43,92 @@ export default function AdminDashboard() {
     checkAdmin();
   }, []);
 
+  // --------------------------------
+  // ADMIN PROTECTION
+  // --------------------------------
+
   async function checkAdmin() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    if (!session) {
-      router.push("/login");
-      return;
+      // Login nahi hai
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      console.log("Checking Admin Role...");
+
+      // Server-side role check
+      const response = await fetch("/api/auth/role", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        cache: "no-store",
+      });
+
+      const roleData = await response.json();
+
+      console.log("Admin Dashboard Role:", roleData);
+
+      // Role API error
+      if (!response.ok) {
+        console.error("Admin role check failed:", roleData);
+
+        await supabase.auth.signOut();
+        router.replace("/login");
+        return;
+      }
+
+      // --------------------------------
+      // ONLY ADMIN CAN OPEN DASHBOARD
+      // --------------------------------
+
+      if (roleData.role !== "admin") {
+        console.log(
+          "Unauthorized Dashboard Access:",
+          roleData.role
+        );
+
+        // Customer
+        if (roleData.role === "customer") {
+          router.replace("/customer-dashboard");
+          return;
+        }
+
+        // Sub Label
+        if (roleData.role === "sub_label") {
+          router.replace("/sub-label-dashboard");
+          return;
+        }
+
+        // Unknown role
+        await supabase.auth.signOut();
+        router.replace("/login");
+        return;
+      }
+
+      // --------------------------------
+      // ADMIN VERIFIED
+      // --------------------------------
+
+      console.log("Admin verified successfully ✅");
+
+      await loadDashboard();
+    } catch (error) {
+      console.error("Admin protection error:", error);
+
+      await supabase.auth.signOut();
+      router.replace("/login");
     }
-
-    await loadDashboard();
   }
+
+  // --------------------------------
+  // SIGNED URL
+  // --------------------------------
 
   async function createSignedUrl(
     path: string | null
@@ -62,7 +136,10 @@ export default function AdminDashboard() {
     if (!path) return null;
 
     // Agar already full URL hai
-    if (path.startsWith("http://") || path.startsWith("https://")) {
+    if (
+      path.startsWith("http://") ||
+      path.startsWith("https://")
+    ) {
       return path;
     }
 
@@ -79,6 +156,10 @@ export default function AdminDashboard() {
     return data.signedUrl;
   }
 
+  // --------------------------------
+  // LOAD DASHBOARD
+  // --------------------------------
+
   async function loadDashboard() {
     try {
       setLoading(true);
@@ -86,6 +167,7 @@ export default function AdminDashboard() {
       // --------------------------------
       // TOTAL SONGS
       // --------------------------------
+
       const { count: songsCount, error: songsCountError } =
         await supabase
           .from("songs")
@@ -103,6 +185,7 @@ export default function AdminDashboard() {
       // --------------------------------
       // STATUS COUNTS
       // --------------------------------
+
       const { count: pendingCount } = await supabase
         .from("songs")
         .select("*", {
@@ -134,6 +217,7 @@ export default function AdminDashboard() {
       // --------------------------------
       // CUSTOMERS COUNT
       // --------------------------------
+
       const { count: customersCount } = await supabase
         .from("customers")
         .select("*", {
@@ -146,6 +230,7 @@ export default function AdminDashboard() {
       // --------------------------------
       // ARTISTS + ALBUMS
       // --------------------------------
+
       const { data: allSongs, error: allSongsError } =
         await supabase
           .from("songs")
@@ -174,6 +259,7 @@ export default function AdminDashboard() {
       // --------------------------------
       // RECENT SONGS
       // --------------------------------
+
       const { data: songs, error: recentError } =
         await supabase
           .from("songs")
@@ -208,6 +294,7 @@ export default function AdminDashboard() {
       // --------------------------------
       // CUSTOMER SONG LINKS
       // --------------------------------
+
       const songIds = songs.map((song) => song.id);
 
       const { data: customerLinks, error: linksError } =
@@ -251,6 +338,7 @@ export default function AdminDashboard() {
       // --------------------------------
       // FINAL SONG DATA
       // --------------------------------
+
       const finalSongs: Song[] = await Promise.all(
         songs.map(async (song) => {
           const link = (customerLinks || []).find(
@@ -292,6 +380,7 @@ export default function AdminDashboard() {
   // --------------------------------
   // APPROVE SONG
   // --------------------------------
+
   async function approveSong(songId: number) {
     const confirmApprove = window.confirm(
       "Kya aap is song ko Approve karna chahte hain?"
@@ -329,6 +418,7 @@ export default function AdminDashboard() {
   // --------------------------------
   // REJECT SONG
   // --------------------------------
+
   async function rejectSong(songId: number) {
     const reason = window.prompt(
       "Song reject karne ka reason likhiye:"
@@ -373,6 +463,7 @@ export default function AdminDashboard() {
   // --------------------------------
   // DELETE SONG
   // --------------------------------
+
   async function deleteSong(songId: number) {
     const confirmDelete = window.confirm(
       "Kya aap sure hain? Ye song permanently delete ho jayega."
@@ -407,6 +498,7 @@ export default function AdminDashboard() {
   // --------------------------------
   // LOGOUT
   // --------------------------------
+
   async function logout() {
     await supabase.auth.signOut();
     router.push("/login");
@@ -415,6 +507,7 @@ export default function AdminDashboard() {
   // --------------------------------
   // STATUS STYLE
   // --------------------------------
+
   function getStatusStyle(status: string | null) {
     if (status === "Approved") {
       return {
@@ -439,6 +532,7 @@ export default function AdminDashboard() {
   // --------------------------------
   // SEARCH + FILTER
   // --------------------------------
+
   const filteredSongs = recentSongs.filter((song) => {
     const searchText = search.toLowerCase().trim();
 
@@ -470,6 +564,7 @@ export default function AdminDashboard() {
   // --------------------------------
   // LOADING
   // --------------------------------
+
   if (loading) {
     return (
       <div
@@ -501,6 +596,7 @@ export default function AdminDashboard() {
       {/* =========================
           SIDEBAR
       ========================== */}
+
       <aside
         style={{
           width: "250px",
@@ -516,6 +612,7 @@ export default function AdminDashboard() {
         }}
       >
         {/* LOGO */}
+
         <div
           style={{
             textAlign: "center",
@@ -546,6 +643,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* NAVIGATION */}
+
         <div
           style={{
             display: "flex",
@@ -615,6 +713,7 @@ export default function AdminDashboard() {
       {/* =========================
           MAIN
       ========================== */}
+
       <main
         style={{
           marginLeft: "250px",
@@ -624,6 +723,7 @@ export default function AdminDashboard() {
         }}
       >
         {/* HEADER */}
+
         <div
           style={{
             display: "flex",
@@ -674,6 +774,7 @@ export default function AdminDashboard() {
         {/* =========================
             MAIN STATS
         ========================== */}
+
         <div
           style={{
             display: "grid",
@@ -729,6 +830,7 @@ export default function AdminDashboard() {
         {/* =========================
             SEARCH + FILTER
         ========================== */}
+
         <div
           style={{
             background: "#0f172a",
@@ -782,6 +884,7 @@ export default function AdminDashboard() {
         {/* =========================
             RECENT SONGS
         ========================== */}
+
         <section
           style={{
             background: "#0f172a",
@@ -876,6 +979,7 @@ export default function AdminDashboard() {
                       }}
                     >
                       {/* COVER */}
+
                       <td style={tdStyle}>
                         {song.signed_cover_url ? (
                           <img
@@ -913,6 +1017,7 @@ export default function AdminDashboard() {
                       </td>
 
                       {/* SONG */}
+
                       <td style={tdStyle}>
                         <div
                           style={{
@@ -939,12 +1044,14 @@ export default function AdminDashboard() {
                       </td>
 
                       {/* ARTIST */}
+
                       <td style={tdStyle}>
                         {song.artist_name ||
                           "Unknown Artist"}
                       </td>
 
                       {/* STATUS */}
+
                       <td style={tdStyle}>
                         <span
                           style={{
@@ -967,6 +1074,7 @@ export default function AdminDashboard() {
                       </td>
 
                       {/* REJECTION REASON */}
+
                       <td style={tdStyle}>
                         {song.status ===
                           "Rejected" &&
@@ -1003,6 +1111,7 @@ export default function AdminDashboard() {
                       </td>
 
                       {/* CUSTOMER */}
+
                       <td style={tdStyle}>
                         <div
                           style={{
@@ -1026,6 +1135,7 @@ export default function AdminDashboard() {
                       </td>
 
                       {/* AUDIO */}
+
                       <td style={tdStyle}>
                         {song.signed_audio_url ? (
                           <audio
@@ -1058,6 +1168,7 @@ export default function AdminDashboard() {
                       </td>
 
                       {/* APPROVAL */}
+
                       <td style={tdStyle}>
                         <div
                           style={{
@@ -1142,6 +1253,7 @@ export default function AdminDashboard() {
                       </td>
 
                       {/* DELETE */}
+
                       <td style={tdStyle}>
                         <button
                           onClick={() =>
@@ -1182,6 +1294,7 @@ export default function AdminDashboard() {
         </section>
 
         {/* FOOTER */}
+
         <div
           style={{
             marginTop: "25px",
