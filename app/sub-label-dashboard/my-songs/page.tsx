@@ -56,13 +56,17 @@ export default function SubLabelMySongs() {
         return;
       }
 
+      // ==============================
       // ROLE CHECK
+      // ==============================
+
       const roleResponse = await fetch(
         "/api/auth/role",
         {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
           },
+          cache: "no-store",
         }
       );
 
@@ -79,7 +83,10 @@ export default function SubLabelMySongs() {
         return;
       }
 
+      // ==============================
       // CUSTOMER
+      // ==============================
+
       if (roleData.role === "customer") {
         router.push(
           "/customer-dashboard"
@@ -87,13 +94,19 @@ export default function SubLabelMySongs() {
         return;
       }
 
+      // ==============================
       // ADMIN
+      // ==============================
+
       if (roleData.role === "admin") {
         router.push("/dashboard");
         return;
       }
 
+      // ==============================
       // ONLY SUB LABEL
+      // ==============================
+
       if (roleData.role !== "sub_label") {
         router.push("/login");
         return;
@@ -122,7 +135,10 @@ export default function SubLabelMySongs() {
         return;
       }
 
+      // ==============================
       // GET SONG LINKS
+      // ==============================
+
       const {
         data: links,
         error: linkError,
@@ -156,7 +172,10 @@ export default function SubLabelMySongs() {
         (item) => item.song_id
       );
 
+      // ==============================
       // GET SONGS
+      // ==============================
+
       const {
         data: songData,
         error: songError,
@@ -195,7 +214,10 @@ export default function SubLabelMySongs() {
         return;
       }
 
-      // Keep same order as sub_label_songs
+      // ==============================
+      // KEEP SAME ORDER
+      // ==============================
+
       const orderedSongs =
         songIds
           .map((songId) =>
@@ -226,17 +248,24 @@ export default function SubLabelMySongs() {
     }
   }
 
+  // ==============================
+  // LOGOUT
+  // ==============================
+
   async function logout() {
     await supabase.auth.signOut();
     router.push("/login");
   }
+
+  // ==============================
+  // FILE URL
+  // ==============================
 
   function getFileUrl(
     url: string | null
   ) {
     if (!url) return null;
 
-    // Already full URL
     if (
       url.startsWith("http://") ||
       url.startsWith("https://")
@@ -246,6 +275,22 @@ export default function SubLabelMySongs() {
 
     return url;
   }
+
+  // ==============================
+  // EDIT REJECTED SONG
+  // ==============================
+
+  function editRejectedSong(
+    songId: number
+  ) {
+    router.push(
+      `/sub-label-dashboard/my-songs/edit/${songId}`
+    );
+  }
+
+  // ==============================
+  // SEARCH + FILTER
+  // ==============================
 
   const filteredSongs =
     songs.filter((song) => {
@@ -277,6 +322,10 @@ export default function SubLabelMySongs() {
       );
     });
 
+  // ==============================
+  // STATS
+  // ==============================
+
   const totalSongs = songs.length;
 
   const pendingSongs =
@@ -296,6 +345,10 @@ export default function SubLabelMySongs() {
       (song) =>
         song.status === "Rejected"
     ).length;
+
+  // ==============================
+  // LOADING
+  // ==============================
 
   if (loading) {
     return (
@@ -324,7 +377,10 @@ export default function SubLabelMySongs() {
         display: "flex",
       }}
     >
-      {/* SIDEBAR */}
+      {/* ==============================
+          SIDEBAR
+      ============================== */}
+
       <aside
         style={{
           width: "250px",
@@ -341,6 +397,7 @@ export default function SubLabelMySongs() {
         }}
       >
         {/* LOGO */}
+
         <div
           style={{
             textAlign: "center",
@@ -371,6 +428,7 @@ export default function SubLabelMySongs() {
         </div>
 
         {/* SUB LABEL NAME */}
+
         <div
           style={{
             padding: "12px",
@@ -403,6 +461,7 @@ export default function SubLabelMySongs() {
         </div>
 
         {/* NAVIGATION */}
+
         <div
           style={{
             display: "flex",
@@ -458,6 +517,7 @@ export default function SubLabelMySongs() {
         </div>
 
         {/* LOGOUT */}
+
         <button
           onClick={logout}
           style={{
@@ -476,7 +536,10 @@ export default function SubLabelMySongs() {
         </button>
       </aside>
 
-      {/* MAIN */}
+      {/* ==============================
+          MAIN
+      ============================== */}
+
       <main
         style={{
           marginLeft: "250px",
@@ -486,6 +549,7 @@ export default function SubLabelMySongs() {
         }}
       >
         {/* HEADER */}
+
         <div
           style={{
             display: "flex",
@@ -537,7 +601,10 @@ export default function SubLabelMySongs() {
           </button>
         </div>
 
-        {/* STATS */}
+        {/* ==============================
+            STATS
+        ============================== */}
+
         <div
           style={{
             display: "grid",
@@ -572,7 +639,10 @@ export default function SubLabelMySongs() {
           />
         </div>
 
-        {/* SEARCH + FILTER */}
+        {/* ==============================
+            SEARCH + FILTER
+        ============================== */}
+
         <div
           style={{
             display: "flex",
@@ -623,19 +693,25 @@ export default function SubLabelMySongs() {
             <option value="All">
               All
             </option>
+
             <option value="Pending">
               Pending
             </option>
+
             <option value="Approved">
               Approved
             </option>
+
             <option value="Rejected">
               Rejected
             </option>
           </select>
         </div>
 
-        {/* EMPTY */}
+        {/* ==============================
+            EMPTY
+        ============================== */}
+
         {filteredSongs.length === 0 && (
           <div
             style={{
@@ -702,7 +778,10 @@ export default function SubLabelMySongs() {
           </div>
         )}
 
-        {/* SONG LIST */}
+        {/* ==============================
+            SONG LIST
+        ============================== */}
+
         <div
           style={{
             display: "flex",
@@ -735,6 +814,7 @@ export default function SubLabelMySongs() {
                   }}
                 >
                   {/* SONG TOP */}
+
                   <div
                     style={{
                       display: "flex",
@@ -744,6 +824,7 @@ export default function SubLabelMySongs() {
                     }}
                   >
                     {/* COVER */}
+
                     <div
                       style={{
                         width: "120px",
@@ -792,6 +873,7 @@ export default function SubLabelMySongs() {
                     </div>
 
                     {/* INFO */}
+
                     <div
                       style={{
                         flex: 1,
@@ -842,6 +924,8 @@ export default function SubLabelMySongs() {
                           }
                         />
                       </div>
+
+                      {/* SONG DETAILS */}
 
                       <div
                         style={{
@@ -906,53 +990,105 @@ export default function SubLabelMySongs() {
                     </div>
                   </div>
 
-                  {/* REJECTION REASON */}
+                  {/* ==============================
+                      REJECTED SONG
+                  ============================== */}
+
                   {song.status ===
-                    "Rejected" &&
-                    song.rejection_reason && (
+                    "Rejected" && (
+                    <div
+                      style={{
+                        marginTop: "18px",
+                      }}
+                    >
+                      {/* REJECTION REASON */}
+
+                      {song.rejection_reason && (
+                        <div
+                          style={{
+                            padding:
+                              "15px",
+                            borderRadius:
+                              "9px",
+                            background:
+                              "rgba(127,29,29,0.25)",
+                            border:
+                              "1px solid rgba(248,113,113,0.35)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              color:
+                                "#fca5a5",
+                              fontWeight:
+                                "700",
+                              marginBottom:
+                                "6px",
+                            }}
+                          >
+                            Rejection Reason
+                          </div>
+
+                          <div
+                            style={{
+                              color:
+                                "#fecaca",
+                              lineHeight:
+                                "1.6",
+                            }}
+                          >
+                            {
+                              song.rejection_reason
+                            }
+                          </div>
+                        </div>
+                      )}
+
+                      {/* EDIT BUTTON */}
+
                       <div
                         style={{
-                          marginTop:
-                            "18px",
-                          padding:
-                            "15px",
-                          borderRadius:
-                            "9px",
-                          background:
-                            "rgba(127,29,29,0.25)",
-                          border:
-                            "1px solid rgba(248,113,113,0.35)",
+                          display: "flex",
+                          justifyContent:
+                            "flex-end",
+                          marginTop: "12px",
                         }}
                       >
-                        <div
+                        <button
+                          onClick={() =>
+                            editRejectedSong(
+                              song.id
+                            )
+                          }
                           style={{
+                            padding:
+                              "11px 18px",
+                            borderRadius:
+                              "8px",
+                            border:
+                              "1px solid #f59e0b",
+                            background:
+                              "#78350f",
                             color:
-                              "#fca5a5",
+                              "#fef3c7",
+                            cursor:
+                              "pointer",
                             fontWeight:
                               "700",
-                            marginBottom:
-                              "6px",
+                            fontSize:
+                              "14px",
                           }}
                         >
-                          Rejection Reason
-                        </div>
-
-                        <div
-                          style={{
-                            color:
-                              "#fecaca",
-                            lineHeight:
-                              "1.6",
-                          }}
-                        >
-                          {
-                            song.rejection_reason
-                          }
-                        </div>
+                          ✏️ Edit Song
+                        </button>
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                  {/* AUDIO */}
+                  {/* ==============================
+                      AUDIO
+                  ============================== */}
+
                   {audioUrl && (
                     <div
                       style={{
@@ -1105,6 +1241,7 @@ function StatusBadge({
 }) {
   let background =
     "rgba(148,163,184,0.15)";
+
   let color = "#cbd5e1";
 
   if (status === "Approved") {

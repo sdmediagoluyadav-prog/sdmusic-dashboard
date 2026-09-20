@@ -22,11 +22,12 @@ export default function SubLabelDashboard() {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole>(null);
 
+  const [customerName, setCustomerName] = useState("");
+  const [customerId, setCustomerId] = useState<number | null>(null);
+
   const [subLabels, setSubLabels] = useState<SubLabel[]>([]);
   const [selectedSubLabel, setSelectedSubLabel] =
     useState<SubLabel | null>(null);
-
-  const [customerName, setCustomerName] = useState("");
 
   useEffect(() => {
     loadDashboard();
@@ -36,338 +37,144 @@ export default function SubLabelDashboard() {
     try {
       setLoading(true);
 
-      // ==============================
-      // CHECK SESSION
-      // ==============================
-
       const {
         data: { session },
-        error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (sessionError || !session) {
-        router.replace("/login");
+      if (!session) {
+        router.push("/login");
         return;
       }
 
-      // ==============================
-      // CHECK ROLE
-      // ==============================
-
-      const roleResponse = await fetch("/api/auth/role", {
-        method: "GET",
+      const roleRes = await fetch("/api/auth/role", {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
-        cache: "no-store",
       });
 
-      const roleData = await roleResponse.json();
+      const roleData = await roleRes.json();
 
-      console.log("Sub Label Dashboard Role:", roleData);
-
-      if (!roleResponse.ok) {
-        console.error("Role error:", roleData);
-
-        await supabase.auth.signOut();
-        router.replace("/login");
+      if (!roleRes.ok) {
+        alert(roleData?.error || "Role check failed");
+        router.push("/login");
         return;
       }
 
-      // =====================================================
-      // CUSTOMER LOGIN
-      // =====================================================
+      setRole(roleData.role);
 
-      if (roleData.role === "customer") {
-        setRole("customer");
-
-        if (!roleData.customer) {
-          alert("Customer account nahi mila ❌");
-          router.replace("/login");
-          return;
-        }
-
-        if (roleData.customer.is_active === false) {
-          alert("Customer account inactive hai ❌");
-
-          await supabase.auth.signOut();
-          router.replace("/login");
-          return;
-        }
-
-        setCustomerName(
-          roleData.customer.customer_name || ""
-        );
-
-        // ==============================
-        // LOAD CUSTOMER SUB LABELS
-        // ==============================
-
-        const {
-          data: customerSubLabels,
-          error: subLabelError,
-        } = await supabase
-          .from("sub_labels")
-          .select(
-            "id, customer_id, sub_label_name, email, auth_user_id, is_active, created_at"
-          )
-          .eq(
-            "customer_id",
-            roleData.customer.id
-          )
-          .order("id", {
-            ascending: false,
-          });
-
-        if (subLabelError) {
-          console.error(
-            "Customer Sub Label Error:",
-            subLabelError
-          );
-
-          alert(
-            "Sub Labels load nahi ho paye ❌\n\n" +
-              subLabelError.message
-          );
-
-          return;
-        }
-
-        setSubLabels(customerSubLabels || []);
-
-        if (
-          customerSubLabels &&
-          customerSubLabels.length > 0
-        ) {
-          setSelectedSubLabel(
-            customerSubLabels[0]
-          );
-        }
-
-        return;
-      }
-
-      // =====================================================
-      // SUB LABEL LOGIN
-      // =====================================================
-
-      if (roleData.role === "sub_label") {
-        setRole("sub_label");
-
-        if (!roleData.subLabel) {
-          alert("Sub Label account nahi mila ❌");
-
-          await supabase.auth.signOut();
-          router.replace("/login");
-          return;
-        }
-
-        if (roleData.subLabel.is_active === false) {
-          alert(
-            "Aapka Sub Label account inactive hai ❌"
-          );
-
-          await supabase.auth.signOut();
-          router.replace("/login");
-          return;
-        }
-
-        const currentSubLabel: SubLabel =
-          roleData.subLabel;
-
-        setSubLabels([currentSubLabel]);
-        setSelectedSubLabel(currentSubLabel);
-
-        return;
-      }
-
-      // =====================================================
-      // ADMIN LOGIN
-      // =====================================================
-
+      /* =========================
+         ADMIN
+      ========================= */
       if (roleData.role === "admin") {
-        router.replace("/dashboard");
+        router.push("/dashboard");
         return;
       }
 
-      // =====================================================
-      // UNKNOWN ROLE
-      // =====================================================
+      /* =========================
+         CUSTOMER
+      ========================= */
+      if (roleData.role === "customer") {
+        const customer = roleData.customer;
 
-      await supabase.auth.signOut();
-      router.replace("/login");
+        if (!customer || !customer.is_active) {
+          alert("Customer account inactive or not found.");
+          router.push("/login");
+          return;
+        }
+
+        setCustomerName(customer.customer_name || "");
+        setCustomerId(customer.id);
+
+        const { data: labels, error: labelsError } = await supabase
+          .from("sub_labels")
+          .select("*")
+          .eq("customer_id", customer.id)
+          .order("created_at", { ascending: false });
+
+        if (labelsError) {
+          console.error(labelsError);
+          alert("Sub Labels load nahi ho paaye.");
+          return;
+        }
+
+        setSubLabels(labels || []);
+
+        if (labels && labels.length > 0) {
+          setSelectedSubLabel(labels[0]);
+        }
+
+        return;
+      }
+
+      /* =========================
+         SUB LABEL
+      ========================= */
+      if (roleData.role === "sub_label") {
+        const subLabel = roleData.subLabel;
+
+        if (!subLabel || !subLabel.is_active) {
+          alert("Sub Label account inactive or not found.");
+          router.push("/login");
+          return;
+        }
+
+        setSelectedSubLabel(subLabel);
+
+        return;
+      }
+
+      alert("Invalid account role.");
+      router.push("/login");
     } catch (error) {
-      console.error(
-        "Sub Label Dashboard Error:",
-        error
-      );
-
-      alert(
-        "Dashboard load karne me problem aa gayi ❌"
-      );
-
-      await supabase.auth.signOut();
-      router.replace("/login");
+      console.error(error);
+      alert("Something went wrong.");
     } finally {
       setLoading(false);
     }
   }
 
-  // ==============================
-  // LOGOUT
-  // ==============================
-
   async function logout() {
     await supabase.auth.signOut();
-
-    router.replace("/login");
+    router.push("/login");
   }
-
-  // ==============================
-  // SELECT SUB LABEL
-  // ==============================
-
-  function handleSubLabelChange(
-    event: React.ChangeEvent<HTMLSelectElement>
-  ) {
-    const selectedId = Number(event.target.value);
-
-    const found = subLabels.find(
-      (item) => item.id === selectedId
-    );
-
-    if (found) {
-      setSelectedSubLabel(found);
-    }
-  }
-
-  // ==============================
-  // LOADING
-  // ==============================
 
   if (loading) {
     return (
-      <main
+      <div
         style={{
           minHeight: "100vh",
-          background: "#0f172a",
+          background: "#020617",
+          color: "white",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: "#ffffff",
           fontSize: "18px",
         }}
       >
-        Loading Sub Label Dashboard... 🔐
-      </main>
+        Loading Sub Label Dashboard...
+      </div>
     );
-  }
-
-  // ==============================
-  // NO SUB LABEL
-  // ==============================
-
-  if (
-    role === "customer" &&
-    subLabels.length === 0
-  ) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "#0f172a",
-          color: "#ffffff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "20px",
-          textAlign: "center",
-        }}
-      >
-        <div
-          style={{
-            background: "#111827",
-            border: "1px solid #1f2937",
-            borderRadius: "15px",
-            padding: "35px",
-            maxWidth: "500px",
-            width: "100%",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "50px",
-              marginBottom: "15px",
-            }}
-          >
-            🏷️
-          </div>
-
-          <h2
-            style={{
-              margin: "0 0 10px",
-            }}
-          >
-            No Sub Label Found
-          </h2>
-
-          <p
-            style={{
-              color: "#9ca3af",
-              lineHeight: "1.6",
-            }}
-          >
-            Aapke account me abhi koi Sub Label
-            available nahi hai.
-          </p>
-
-          <button
-            onClick={() =>
-              router.push("/customer-dashboard")
-            }
-            style={{
-              marginTop: "15px",
-              padding: "12px 20px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#2563eb",
-              color: "#ffffff",
-              cursor: "pointer",
-              fontWeight: "600",
-            }}
-          >
-            ← Customer Dashboard
-          </button>
-        </div>
-      </main>
-    );
-  }
-
-  if (!selectedSubLabel) {
-    return null;
   }
 
   return (
-    <main
+    <div
       style={{
         minHeight: "100vh",
         background: "#0f172a",
-        color: "#ffffff",
+        color: "white",
         display: "flex",
       }}
     >
-      {/* ================================================= */}
-      {/* SIDEBAR */}
-      {/* ================================================= */}
-
+      {/* =========================
+          SIDEBAR
+      ========================= */}
       <aside
         style={{
           width: "250px",
-          minHeight: "100vh",
           background: "#111827",
           borderRight: "1px solid #1f2937",
-          padding: "25px 18px",
-          boxSizing: "border-box",
+          minHeight: "100vh",
+          padding: "20px 14px",
           position: "fixed",
           left: 0,
           top: 0,
@@ -375,802 +182,769 @@ export default function SubLabelDashboard() {
         }}
       >
         {/* LOGO */}
-
         <div
           style={{
-            textAlign: "center",
-            marginBottom: "28px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "8px 10px 25px",
           }}
         >
           <img
             src="/sd-logo.png"
-            alt="SD Media Entertainment"
+            alt="SD Media"
             style={{
-              width: "110px",
-              height: "110px",
+              width: "42px",
+              height: "42px",
               objectFit: "contain",
-              display: "block",
-              margin: "0 auto 10px",
             }}
           />
 
-          <p
-            style={{
-              margin: 0,
-              color: "#9ca3af",
-              fontSize: "13px",
-            }}
-          >
-            Sub Label Dashboard
-          </p>
-        </div>
-
-        {/* CUSTOMER SUB LABEL SELECTOR */}
-
-        {role === "customer" &&
-          subLabels.length > 0 && (
+          <div>
             <div
               style={{
-                marginBottom: "25px",
+                fontWeight: "700",
+                fontSize: "16px",
               }}
             >
-              <label
-                style={{
-                  display: "block",
-                  color: "#9ca3af",
-                  fontSize: "12px",
-                  marginBottom: "7px",
-                }}
-              >
-                Select Sub Label
-              </label>
-
-              <select
-                value={selectedSubLabel.id}
-                onChange={handleSubLabelChange}
-                style={{
-                  width: "100%",
-                  padding: "11px",
-                  borderRadius: "8px",
-                  border:
-                    "1px solid #374151",
-                  background: "#1f2937",
-                  color: "#ffffff",
-                  outline: "none",
-                  cursor: "pointer",
-                  boxSizing: "border-box",
-                }}
-              >
-                {subLabels.map((item) => (
-                  <option
-                    key={item.id}
-                    value={item.id}
-                  >
-                    {item.sub_label_name}
-                  </option>
-                ))}
-              </select>
+              SD Media
             </div>
-          )}
 
-        {/* MENU */}
-
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-          }}
-        >
-          {/* DASHBOARD */}
-
-          <button
-            style={{
-              width: "100%",
-              padding: "13px 15px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#2563eb",
-              color: "#ffffff",
-              textAlign: "left",
-              fontSize: "14px",
-              cursor: "pointer",
-            }}
-          >
-            🏠 Dashboard
-          </button>
-
-          {/* UPLOAD */}
-
-          <button
-            onClick={() =>
-              router.push(
-                "/sub-label-dashboard/upload"
-              )
-            }
-            style={{
-              width: "100%",
-              padding: "13px 15px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#1f2937",
-              color: "#d1d5db",
-              textAlign: "left",
-              fontSize: "14px",
-              cursor: "pointer",
-            }}
-          >
-            🎵 Upload Song
-          </button>
-
-          {/* MY SONGS */}
-
-          <button
-            onClick={() =>
-              alert(
-                "My Songs section next step me banega."
-              )
-            }
-            style={{
-              width: "100%",
-              padding: "13px 15px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#1f2937",
-              color: "#d1d5db",
-              textAlign: "left",
-              fontSize: "14px",
-              cursor: "pointer",
-            }}
-          >
-            🎶 My Songs
-          </button>
-
-          {/* ARTISTS */}
-
-          <button
-            onClick={() =>
-              alert(
-                "Artists section next step me banega."
-              )
-            }
-            style={{
-              width: "100%",
-              padding: "13px 15px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#1f2937",
-              color: "#d1d5db",
-              textAlign: "left",
-              fontSize: "14px",
-              cursor: "pointer",
-            }}
-          >
-            👤 Artists
-          </button>
-
-          {/* PROFILE */}
-
-          <button
-            onClick={() =>
-              alert(
-                "Profile section next step me banega."
-              )
-            }
-            style={{
-              width: "100%",
-              padding: "13px 15px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#1f2937",
-              color: "#d1d5db",
-              textAlign: "left",
-              fontSize: "14px",
-              cursor: "pointer",
-            }}
-          >
-            ⚙️ Profile
-          </button>
+            <div
+              style={{
+                color: "#94a3b8",
+                fontSize: "11px",
+              }}
+            >
+              Sub Label Dashboard
+            </div>
+          </div>
         </div>
 
-        {/* CUSTOMER BACK BUTTON */}
+        {/* =========================
+            DASHBOARD
+        ========================= */}
+        <button
+          onClick={() =>
+            router.push(
+              "/sub-label-dashboard"
+            )
+          }
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            marginBottom: "6px",
+            border: "none",
+            borderRadius: "8px",
+            background: "#2563eb",
+            color: "white",
+            textAlign: "left",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          🏠 Dashboard
+        </button>
 
+        {/* =========================
+            UPLOAD SONG
+        ========================= */}
+        <button
+          onClick={() =>
+            router.push(
+              "/sub-label-dashboard/upload"
+            )
+          }
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            marginBottom: "6px",
+            border: "none",
+            borderRadius: "8px",
+            background: "transparent",
+            color: "#cbd5e1",
+            textAlign: "left",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          🎵 Upload Song
+        </button>
+
+        {/* =========================
+            MY SONGS
+        ========================= */}
+        <button
+          onClick={() =>
+            router.push(
+              "/sub-label-dashboard/my-songs"
+            )
+          }
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            marginBottom: "6px",
+            border: "none",
+            borderRadius: "8px",
+            background: "transparent",
+            color: "#cbd5e1",
+            textAlign: "left",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          🎶 My Songs
+        </button>
+
+        {/* =========================
+            ARTISTS
+        ========================= */}
+        <button
+          onClick={() =>
+            router.push(
+              "/sub-label-dashboard/artists"
+            )
+          }
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            marginBottom: "6px",
+            border: "none",
+            borderRadius: "8px",
+            background: "transparent",
+            color: "#cbd5e1",
+            textAlign: "left",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          👤 Artists
+        </button>
+
+        {/* =========================
+            PROFILE
+        ========================= */}
+        <button
+          onClick={() =>
+            router.push(
+              "/sub-label-dashboard/profile"
+            )
+          }
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            marginBottom: "6px",
+            border: "none",
+            borderRadius: "8px",
+            background: "transparent",
+            color: "#cbd5e1",
+            textAlign: "left",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          ⚙️ Profile
+        </button>
+
+        {/* =========================
+            CUSTOMER DASHBOARD
+        ========================= */}
         {role === "customer" && (
           <button
             onClick={() =>
               router.push("/customer-dashboard")
             }
             style={{
-              position: "absolute",
-              left: "18px",
-              right: "18px",
-              bottom: "75px",
-              width: "calc(100% - 36px)",
-              padding: "11px",
+              width: "100%",
+              padding: "12px 14px",
+              marginBottom: "6px",
               border: "none",
               borderRadius: "8px",
-              background: "#374151",
-              color: "#ffffff",
-              fontSize: "13px",
+              background: "transparent",
+              color: "#cbd5e1",
+              textAlign: "left",
               cursor: "pointer",
+              fontSize: "14px",
             }}
           >
-            ← Customer Dashboard
+            👑 Customer Dashboard
           </button>
         )}
 
-        {/* LOGOUT */}
-
-        <div
+        {/* =========================
+            LOGOUT
+        ========================= */}
+        <button
+          onClick={logout}
           style={{
-            position: "absolute",
-            left: "18px",
-            right: "18px",
-            bottom: "20px",
+            width: "100%",
+            padding: "12px 14px",
+            marginTop: "25px",
+            border: "1px solid #374151",
+            borderRadius: "8px",
+            background: "#1f2937",
+            color: "#f87171",
+            textAlign: "left",
+            cursor: "pointer",
+            fontSize: "14px",
           }}
         >
-          <button
-            onClick={logout}
-            style={{
-              width: "100%",
-              padding: "13px",
-              border: "none",
-              borderRadius: "8px",
-              background: "#dc2626",
-              color: "#ffffff",
-              fontSize: "14px",
-              fontWeight: "600",
-              cursor: "pointer",
-            }}
-          >
-            🚪 Logout
-          </button>
-        </div>
+          🚪 Logout
+        </button>
       </aside>
 
-      {/* ================================================= */}
-      {/* MAIN CONTENT */}
-      {/* ================================================= */}
-
-      <section
+      {/* =========================
+          MAIN CONTENT
+      ========================= */}
+      <main
         style={{
           marginLeft: "250px",
           width: "calc(100% - 250px)",
-          minHeight: "100vh",
-          padding: "35px",
-          boxSizing: "border-box",
+          padding: "30px",
         }}
       >
         {/* HEADER */}
-
         <div
           style={{
             marginBottom: "25px",
           }}
         >
-          <p
-            style={{
-              margin: "0 0 7px",
-              color: "#9ca3af",
-              fontSize: "14px",
-            }}
-          >
-            {role === "customer"
-              ? `Customer: ${customerName}`
-              : "Sub Label Account"}
-          </p>
-
           <h1
             style={{
-              margin: "0 0 8px",
-              fontSize: "30px",
+              fontSize: "28px",
               fontWeight: "700",
+              margin: 0,
             }}
           >
-            Welcome,{" "}
-            {selectedSubLabel.sub_label_name} 👋
+            Sub Label Dashboard
           </h1>
 
           <p
             style={{
-              margin: 0,
-              color: "#9ca3af",
-              fontSize: "15px",
+              color: "#94a3b8",
+              marginTop: "6px",
             }}
           >
-            SD Media Entertainment Sub Label
-            Dashboard
+            Manage your music and sub label account.
           </p>
         </div>
 
-        {/* ================================================= */}
-        {/* SELECTED SUB LABEL CARD */}
-        {/* ================================================= */}
-
+        {/* =========================
+            SELECTED SUB LABEL
+        ========================= */}
         <div
           style={{
             background: "#111827",
             border: "1px solid #1f2937",
-            borderRadius: "14px",
+            borderRadius: "12px",
             padding: "22px",
-            marginBottom: "25px",
+            marginBottom: "20px",
           }}
         >
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "15px",
-              flexWrap: "wrap",
+              color: "#94a3b8",
+              fontSize: "13px",
+              marginBottom: "7px",
             }}
           >
-            <div>
-              <p
-                style={{
-                  margin: "0 0 6px",
-                  color: "#9ca3af",
-                  fontSize: "13px",
-                }}
-              >
-                Selected Sub Label
-              </p>
+            Selected Sub Label
+          </div>
 
-              <h2
+          {selectedSubLabel ? (
+            <>
+              <div
                 style={{
-                  margin: 0,
                   fontSize: "22px",
+                  fontWeight: "700",
                 }}
               >
                 {selectedSubLabel.sub_label_name}
-              </h2>
-            </div>
+              </div>
 
-            <span
+              <div
+                style={{
+                  color: "#94a3b8",
+                  marginTop: "5px",
+                }}
+              >
+                {selectedSubLabel.email}
+              </div>
+            </>
+          ) : (
+            <div
               style={{
-                display: "inline-block",
-                padding: "7px 14px",
-                borderRadius: "999px",
-                background:
-                  selectedSubLabel.is_active
-                    ? "#14532d"
-                    : "#7f1d1d",
-                color:
-                  selectedSubLabel.is_active
-                    ? "#86efac"
-                    : "#fca5a5",
-                fontSize: "13px",
-                fontWeight: "600",
+                color: "#94a3b8",
               }}
             >
-              {selectedSubLabel.is_active
-                ? "Active"
-                : "Inactive"}
-            </span>
-          </div>
+              No Sub Label found.
+            </div>
+          )}
+
+          {/* CUSTOMER SUB LABEL SELECTOR */}
+          {role === "customer" &&
+            subLabels.length > 0 && (
+              <div
+                style={{
+                  marginTop: "18px",
+                }}
+              >
+                <label
+                  style={{
+                    display: "block",
+                    color: "#94a3b8",
+                    fontSize: "13px",
+                    marginBottom: "7px",
+                  }}
+                >
+                  Select Sub Label
+                </label>
+
+                <select
+                  value={selectedSubLabel?.id || ""}
+                  onChange={(e) => {
+                    const selected = subLabels.find(
+                      (item) =>
+                        item.id === Number(e.target.value)
+                    );
+
+                    if (selected) {
+                      setSelectedSubLabel(selected);
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    maxWidth: "450px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: "1px solid #374151",
+                    background: "#020617",
+                    color: "white",
+                    outline: "none",
+                  }}
+                >
+                  {subLabels.map((item) => (
+                    <option
+                      key={item.id}
+                      value={item.id}
+                    >
+                      {item.sub_label_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
         </div>
 
-        {/* ================================================= */}
-        {/* STATS */}
-        {/* ================================================= */}
-
+        {/* =========================
+            STATS
+        ========================= */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns:
-              "repeat(3, minmax(0, 1fr))",
-            gap: "20px",
-            marginBottom: "30px",
+              "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: "15px",
+            marginBottom: "20px",
           }}
         >
-          {/* TOTAL */}
-
           <div
             style={{
               background: "#111827",
               border: "1px solid #1f2937",
-              borderRadius: "14px",
-              padding: "22px",
+              borderRadius: "12px",
+              padding: "20px",
             }}
           >
-            <p
+            <div
               style={{
-                margin: "0 0 8px",
-                color: "#9ca3af",
-                fontSize: "14px",
+                color: "#94a3b8",
+                fontSize: "13px",
               }}
             >
               Total Songs
-            </p>
+            </div>
 
-            <h2
+            <div
               style={{
-                margin: 0,
-                fontSize: "30px",
+                fontSize: "28px",
+                fontWeight: "700",
+                marginTop: "8px",
               }}
             >
               0
-            </h2>
+            </div>
           </div>
-
-          {/* APPROVED */}
 
           <div
             style={{
               background: "#111827",
               border: "1px solid #1f2937",
-              borderRadius: "14px",
-              padding: "22px",
+              borderRadius: "12px",
+              padding: "20px",
             }}
           >
-            <p
+            <div
               style={{
-                margin: "0 0 8px",
-                color: "#9ca3af",
-                fontSize: "14px",
+                color: "#94a3b8",
+                fontSize: "13px",
               }}
             >
               Approved
-            </p>
+            </div>
 
-            <h2
+            <div
               style={{
-                margin: 0,
-                fontSize: "30px",
+                fontSize: "28px",
+                fontWeight: "700",
+                marginTop: "8px",
                 color: "#22c55e",
               }}
             >
               0
-            </h2>
+            </div>
           </div>
-
-          {/* PENDING */}
 
           <div
             style={{
               background: "#111827",
               border: "1px solid #1f2937",
-              borderRadius: "14px",
-              padding: "22px",
+              borderRadius: "12px",
+              padding: "20px",
             }}
           >
-            <p
+            <div
               style={{
-                margin: "0 0 8px",
-                color: "#9ca3af",
-                fontSize: "14px",
+                color: "#94a3b8",
+                fontSize: "13px",
               }}
             >
               Pending
-            </p>
+            </div>
 
-            <h2
+            <div
               style={{
-                margin: 0,
-                fontSize: "30px",
-                color: "#f59e0b",
+                fontSize: "28px",
+                fontWeight: "700",
+                marginTop: "8px",
+                color: "#facc15",
               }}
             >
               0
-            </h2>
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#111827",
+              border: "1px solid #1f2937",
+              borderRadius: "12px",
+              padding: "20px",
+            }}
+          >
+            <div
+              style={{
+                color: "#94a3b8",
+                fontSize: "13px",
+              }}
+            >
+              Rejected
+            </div>
+
+            <div
+              style={{
+                fontSize: "28px",
+                fontWeight: "700",
+                marginTop: "8px",
+                color: "#ef4444",
+              }}
+            >
+              0
+            </div>
           </div>
         </div>
 
-        {/* ================================================= */}
-        {/* ACCOUNT */}
-        {/* ================================================= */}
-
+        {/* =========================
+            ACCOUNT CARD
+        ========================= */}
         <div
           style={{
             background: "#111827",
             border: "1px solid #1f2937",
-            borderRadius: "14px",
-            padding: "25px",
-            marginBottom: "25px",
+            borderRadius: "12px",
+            padding: "22px",
+            marginBottom: "20px",
           }}
         >
           <h2
             style={{
-              margin: "0 0 20px",
-              fontSize: "20px",
+              fontSize: "19px",
+              marginTop: 0,
+              marginBottom: "18px",
             }}
           >
-            Sub Label Account
+            Account Information
           </h2>
 
           <div
             style={{
               display: "grid",
               gridTemplateColumns:
-                "repeat(2, minmax(0, 1fr))",
-              gap: "18px",
+                "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: "15px",
             }}
           >
             <div>
-              <p
+              <div
                 style={{
-                  margin: "0 0 6px",
-                  color: "#9ca3af",
-                  fontSize: "13px",
+                  color: "#94a3b8",
+                  fontSize: "12px",
                 }}
               >
-                Sub Label Name
-              </p>
+                Sub Label
+              </div>
 
-              <p
+              <div
                 style={{
-                  margin: 0,
-                  fontSize: "16px",
+                  marginTop: "5px",
                   fontWeight: "600",
                 }}
               >
-                {selectedSubLabel.sub_label_name}
-              </p>
+                {selectedSubLabel?.sub_label_name ||
+                  "N/A"}
+              </div>
             </div>
 
             <div>
-              <p
+              <div
                 style={{
-                  margin: "0 0 6px",
-                  color: "#9ca3af",
-                  fontSize: "13px",
+                  color: "#94a3b8",
+                  fontSize: "12px",
                 }}
               >
-                Login Email
-              </p>
+                Email
+              </div>
 
-              <p
+              <div
                 style={{
-                  margin: 0,
-                  fontSize: "16px",
+                  marginTop: "5px",
                   fontWeight: "600",
                 }}
               >
-                {selectedSubLabel.email}
-              </p>
+                {selectedSubLabel?.email || "N/A"}
+              </div>
             </div>
 
             <div>
-              <p
+              <div
                 style={{
-                  margin: "0 0 6px",
-                  color: "#9ca3af",
-                  fontSize: "13px",
+                  color: "#94a3b8",
+                  fontSize: "12px",
                 }}
               >
                 Account Status
-              </p>
+              </div>
 
-              <span
+              <div
                 style={{
-                  display: "inline-block",
-                  padding: "6px 12px",
-                  borderRadius: "999px",
-                  background:
-                    selectedSubLabel.is_active
-                      ? "#14532d"
-                      : "#7f1d1d",
-                  color:
-                    selectedSubLabel.is_active
-                      ? "#86efac"
-                      : "#fca5a5",
-                  fontSize: "13px",
+                  marginTop: "5px",
                   fontWeight: "600",
+                  color: selectedSubLabel?.is_active
+                    ? "#22c55e"
+                    : "#ef4444",
                 }}
               >
-                {selectedSubLabel.is_active
+                {selectedSubLabel?.is_active
                   ? "Active"
                   : "Inactive"}
-              </span>
+              </div>
             </div>
 
-            <div>
-              <p
-                style={{
-                  margin: "0 0 6px",
-                  color: "#9ca3af",
-                  fontSize: "13px",
-                }}
-              >
-                Account ID
-              </p>
+            {role === "customer" && (
+              <div>
+                <div
+                  style={{
+                    color: "#94a3b8",
+                    fontSize: "12px",
+                  }}
+                >
+                  Customer
+                </div>
 
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: "16px",
-                  fontWeight: "600",
-                }}
-              >
-                #{selectedSubLabel.id}
-              </p>
-            </div>
+                <div
+                  style={{
+                    marginTop: "5px",
+                    fontWeight: "600",
+                  }}
+                >
+                  {customerName || "N/A"}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ================================================= */}
-        {/* MUSIC MANAGEMENT */}
-        {/* ================================================= */}
-
+        {/* =========================
+            MUSIC MANAGEMENT
+        ========================= */}
         <div
           style={{
             background: "#111827",
             border: "1px solid #1f2937",
-            borderRadius: "14px",
-            padding: "25px",
+            borderRadius: "12px",
+            padding: "22px",
           }}
         >
           <h2
             style={{
-              margin: "0 0 10px",
-              fontSize: "20px",
+              fontSize: "19px",
+              marginTop: 0,
+              marginBottom: "18px",
             }}
           >
-            Sub Label Music Management
+            Music Management
           </h2>
-
-          <p
-            style={{
-              margin: "0 0 20px",
-              color: "#9ca3af",
-              lineHeight: "1.6",
-            }}
-          >
-            Selected Sub Label ke songs yahan se
-            manage kiye jayenge.
-          </p>
 
           <div
             style={{
               display: "grid",
               gridTemplateColumns:
-                "repeat(3, minmax(0, 1fr))",
+                "repeat(auto-fit, minmax(220px, 1fr))",
               gap: "15px",
             }}
           >
             {/* UPLOAD */}
-
-            <button
+            <div
               onClick={() =>
                 router.push(
                   "/sub-label-dashboard/upload"
                 )
               }
               style={{
-                background: "#1f2937",
-                border: "none",
+                border: "1px solid #1f2937",
                 borderRadius: "10px",
-                padding: "18px",
-                color: "#ffffff",
-                textAlign: "left",
+                padding: "20px",
                 cursor: "pointer",
+                background: "#0f172a",
               }}
             >
               <div
                 style={{
-                  fontSize: "24px",
-                  marginBottom: "8px",
+                  fontSize: "25px",
+                  marginBottom: "10px",
                 }}
               >
                 🎵
               </div>
 
-              <h3
-                style={{
-                  margin: "0 0 5px",
-                  fontSize: "16px",
-                }}
-              >
-                Upload Songs
-              </h3>
-
-              <p
-                style={{
-                  margin: 0,
-                  color: "#9ca3af",
-                  fontSize: "13px",
-                }}
-              >
-                Song upload karein.
-              </p>
-            </button>
-
-            {/* MY SONGS */}
-
-            <button
-              onClick={() =>
-                alert(
-                  "My Songs section next step me banega."
-                )
-              }
-              style={{
-                background: "#1f2937",
-                border: "none",
-                borderRadius: "10px",
-                padding: "18px",
-                color: "#ffffff",
-                textAlign: "left",
-                cursor: "pointer",
-              }}
-            >
               <div
                 style={{
-                  fontSize: "24px",
-                  marginBottom: "8px",
+                  fontWeight: "700",
+                  marginBottom: "6px",
                 }}
               >
-                📋
+                Upload Song
               </div>
 
-              <h3
+              <div
                 style={{
-                  margin: "0 0 5px",
-                  fontSize: "16px",
-                }}
-              >
-                Manage Songs
-              </h3>
-
-              <p
-                style={{
-                  margin: 0,
-                  color: "#9ca3af",
+                  color: "#94a3b8",
                   fontSize: "13px",
                 }}
               >
-                Uploaded songs manage karein.
-              </p>
-            </button>
+                Upload your new songs.
+              </div>
+            </div>
 
-            {/* STATUS */}
-
-            <button
+            {/* MY SONGS */}
+            <div
               onClick={() =>
-                alert(
-                  "Song Status section next step me banega."
+                router.push(
+                  "/sub-label-dashboard/my-songs"
                 )
               }
               style={{
-                background: "#1f2937",
-                border: "none",
+                border: "1px solid #1f2937",
                 borderRadius: "10px",
-                padding: "18px",
-                color: "#ffffff",
-                textAlign: "left",
+                padding: "20px",
                 cursor: "pointer",
+                background: "#0f172a",
               }}
             >
               <div
                 style={{
-                  fontSize: "24px",
-                  marginBottom: "8px",
+                  fontSize: "25px",
+                  marginBottom: "10px",
+                }}
+              >
+                🎶
+              </div>
+
+              <div
+                style={{
+                  fontWeight: "700",
+                  marginBottom: "6px",
+                }}
+              >
+                My Songs
+              </div>
+
+              <div
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "13px",
+                }}
+              >
+                View and manage your songs.
+              </div>
+            </div>
+
+            {/* SONG STATUS */}
+            <div
+              onClick={() =>
+                router.push(
+                  "/sub-label-dashboard/my-songs"
+                )
+              }
+              style={{
+                border: "1px solid #1f2937",
+                borderRadius: "10px",
+                padding: "20px",
+                cursor: "pointer",
+                background: "#0f172a",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "25px",
+                  marginBottom: "10px",
                 }}
               >
                 📊
               </div>
 
-              <h3
+              <div
                 style={{
-                  margin: "0 0 5px",
-                  fontSize: "16px",
+                  fontWeight: "700",
+                  marginBottom: "6px",
                 }}
               >
                 Song Status
-              </h3>
+              </div>
 
-              <p
+              <div
                 style={{
-                  margin: 0,
-                  color: "#9ca3af",
+                  color: "#94a3b8",
                   fontSize: "13px",
                 }}
               >
-                Approval status dekhein.
-              </p>
-            </button>
+                Check approved, pending and rejected
+                songs.
+              </div>
+            </div>
           </div>
         </div>
-      </section>
-    </main>
+      </main>
+    </div>
   );
 }
