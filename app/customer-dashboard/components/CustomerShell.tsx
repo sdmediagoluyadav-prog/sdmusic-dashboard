@@ -139,12 +139,19 @@ export default function CustomerShell({
       <div className="error-screen">
         <div className="error-box">
           <div className="error-icon">❌</div>
+
           <h2>Customer account नहीं मिला</h2>
+
           <p>
             आपके login account से कोई customer account linked नहीं है।
           </p>
 
-          <button onClick={logout}>Logout</button>
+          <button
+            type="button"
+            onClick={logout}
+          >
+            Logout
+          </button>
         </div>
 
         <style jsx>{`
@@ -202,93 +209,132 @@ export default function CustomerShell({
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="logo-area">
-          <img src="/sd-logo.png" alt="SD Media" className="logo" />
+          <img
+            src="/sd-logo.png"
+            alt="SD Media"
+            className="logo"
+          />
         </div>
 
         <div className="menu-title">MAIN MENU</div>
 
         <nav className="sidebar-menu">
+          {/* DASHBOARD */}
           <button
+            type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard") ? "active" : ""
+              isActive("/customer-dashboard")
+                ? "active"
+                : ""
             }`}
-            onClick={() => goToPage("/customer-dashboard")}
+            onClick={() => {
+              router.push("/customer-dashboard");
+            }}
           >
             <span className="menu-icon">🏠</span>
             <span>Dashboard</span>
           </button>
 
+          {/* UPLOAD SONG */}
           <button
+            type="button"
             className="menu-item"
-            onClick={() => goToPage("/upload")}
+            onClick={() => {
+              router.push("/upload");
+            }}
           >
             <span className="menu-icon">⬆️</span>
             <span>Upload Song</span>
           </button>
 
+          {/* MY SONGS */}
           <button
+            type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/my-songs") ? "active" : ""
+              isActive("/customer-dashboard/my-songs")
+                ? "active"
+                : ""
             }`}
-            onClick={() =>
-              goToPage("/customer-dashboard/my-songs")
-            }
+            onClick={() => {
+              router.push("/customer-dashboard/my-songs");
+            }}
           >
             <span className="menu-icon">🎵</span>
             <span>My Songs</span>
           </button>
 
+          {/* ARTISTS */}
           <button
+            type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/artists") ? "active" : ""
+              isActive("/customer-dashboard/artists")
+                ? "active"
+                : ""
             }`}
-            onClick={() =>
-              goToPage("/customer-dashboard/artists")
-            }
+            onClick={() => {
+              router.push("/customer-dashboard/artists");
+            }}
           >
             <span className="menu-icon">👥</span>
             <span>Artists</span>
           </button>
 
+          {/* ROYALTY */}
           <button
+            type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/royalty") ? "active" : ""
+              isActive("/customer-dashboard/royalty")
+                ? "active"
+                : ""
             }`}
-            onClick={() =>
-              goToPage("/customer-dashboard/royalty")
-            }
+            onClick={() => {
+              router.push("/customer-dashboard/royalty");
+            }}
           >
             <span className="menu-icon">₹</span>
             <span>Royalty</span>
           </button>
 
+          {/* SUB LABELS */}
           <button
+            type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/sub-labels") ? "active" : ""
+              isActive("/customer-dashboard/sub-labels")
+                ? "active"
+                : ""
             }`}
-            onClick={() =>
-              goToPage("/customer-dashboard/sub-labels")
-            }
+            onClick={() => {
+              router.push("/customer-dashboard/sub-labels");
+            }}
           >
             <span className="menu-icon">🏷️</span>
             <span>Sub Labels</span>
           </button>
 
+          {/* PROFILE */}
           <button
+            type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/profile") ? "active" : ""
+              isActive("/customer-dashboard/profile")
+                ? "active"
+                : ""
             }`}
-            onClick={() =>
-              goToPage("/customer-dashboard/profile")
-            }
+            onClick={() => {
+              router.push("/customer-dashboard/profile");
+            }}
           >
             <span className="menu-icon">👤</span>
             <span>Profile</span>
           </button>
         </nav>
 
+        {/* LOGOUT */}
         <div className="sidebar-bottom">
-          <button className="logout-button" onClick={logout}>
+          <button
+            type="button"
+            className="logout-button"
+            onClick={logout}
+          >
             <span>🚪</span>
             <span>Logout</span>
           </button>
@@ -322,7 +368,9 @@ export default function CustomerShell({
           </div>
         </header>
 
-        <div className="page-content">{children}</div>
+        <div className="page-content">
+          {children}
+        </div>
       </main>
 
       <style jsx>{`
