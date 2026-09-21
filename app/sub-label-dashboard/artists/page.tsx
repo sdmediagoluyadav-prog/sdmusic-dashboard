@@ -148,8 +148,16 @@ export default function SubLabelArtists() {
           customerSubLabels &&
           customerSubLabels.length > 0
         ) {
+          const firstSubLabel =
+            customerSubLabels[0];
+
           setSelectedSubLabel(
-            customerSubLabels[0]
+            firstSubLabel
+          );
+
+          // First Sub Label ke songs load karo
+          await loadSongs(
+            firstSubLabel.id
           );
         }
 
@@ -182,14 +190,21 @@ export default function SubLabelArtists() {
         const currentSubLabel: SubLabel =
           roleData.subLabel;
 
-        setSubLabels([currentSubLabel]);
-        setSelectedSubLabel(currentSubLabel);
+        setSubLabels([
+          currentSubLabel,
+        ]);
+
+        setSelectedSubLabel(
+          currentSubLabel
+        );
 
         // ==============================
         // LOAD SUB LABEL SONGS
         // ==============================
 
-        await loadSongs(currentSubLabel.id);
+        await loadSongs(
+          currentSubLabel.id
+        );
 
         return;
       }
@@ -223,7 +238,9 @@ export default function SubLabelArtists() {
   // LOAD SONGS
   // ==============================
 
-  async function loadSongs(subLabelId: number) {
+  async function loadSongs(
+    subLabelId: number
+  ) {
     try {
       const {
         data: links,
@@ -248,7 +265,10 @@ export default function SubLabelArtists() {
         return;
       }
 
-      if (!links || links.length === 0) {
+      if (
+        !links ||
+        links.length === 0
+      ) {
         setSongs([]);
         return;
       }
@@ -348,7 +368,9 @@ export default function SubLabelArtists() {
           )
         );
 
-      setSongs(songsWithCovers);
+      setSongs(
+        songsWithCovers
+      );
     } catch (error) {
       console.error(
         "Load Songs Error:",
@@ -373,7 +395,8 @@ export default function SubLabelArtists() {
     );
 
     const found = subLabels.find(
-      (item) => item.id === selectedId
+      (item) =>
+        item.id === selectedId
     );
 
     if (!found) return;
@@ -411,7 +434,10 @@ export default function SubLabelArtists() {
         "Unknown Artist";
 
       if (!map.has(artistName)) {
-        map.set(artistName, []);
+        map.set(
+          artistName,
+          []
+        );
       }
 
       map
@@ -783,8 +809,8 @@ export default function SubLabelArtists() {
           <NavButton
             text="⚙️ Profile"
             onClick={() =>
-              alert(
-                "Profile section abhi next step me banega."
+              router.push(
+                "/sub-label-dashboard/profile"
               )
             }
           />
