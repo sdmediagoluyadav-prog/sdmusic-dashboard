@@ -62,11 +62,7 @@ export default function CustomerShell({
 
   async function logout() {
     await supabase.auth.signOut();
-    router.replace("/login");
-  }
-
-  function goToPage(path: string) {
-    router.push(path);
+    window.location.href = "/login";
   }
 
   function isActive(path: string) {
@@ -146,10 +142,7 @@ export default function CustomerShell({
             आपके login account से कोई customer account linked नहीं है।
           </p>
 
-          <button
-            type="button"
-            onClick={logout}
-          >
+          <button type="button" onClick={logout}>
             Logout
           </button>
         </div>
@@ -223,12 +216,10 @@ export default function CustomerShell({
           <button
             type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard")
-                ? "active"
-                : ""
+              isActive("/customer-dashboard") ? "active" : ""
             }`}
             onClick={() => {
-              router.push("/customer-dashboard");
+              window.location.href = "/customer-dashboard";
             }}
           >
             <span className="menu-icon">🏠</span>
@@ -240,7 +231,7 @@ export default function CustomerShell({
             type="button"
             className="menu-item"
             onClick={() => {
-              router.push("/upload");
+              window.location.href = "/upload";
             }}
           >
             <span className="menu-icon">⬆️</span>
@@ -251,28 +242,24 @@ export default function CustomerShell({
           <button
             type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/my-songs")
-                ? "active"
-                : ""
+              isActive("/customer-dashboard/my-songs") ? "active" : ""
             }`}
             onClick={() => {
-              router.push("/customer-dashboard/my-songs");
+              alert("MY SONGS CLICK HO RAHA HAI");
             }}
           >
             <span className="menu-icon">🎵</span>
-            <span>My Songs</span>
+            <span>MY SONGS TEST</span>
           </button>
 
           {/* ARTISTS */}
           <button
             type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/artists")
-                ? "active"
-                : ""
+              isActive("/customer-dashboard/artists") ? "active" : ""
             }`}
             onClick={() => {
-              router.push("/customer-dashboard/artists");
+              window.location.href = "/customer-dashboard/artists";
             }}
           >
             <span className="menu-icon">👥</span>
@@ -283,12 +270,10 @@ export default function CustomerShell({
           <button
             type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/royalty")
-                ? "active"
-                : ""
+              isActive("/customer-dashboard/royalty") ? "active" : ""
             }`}
             onClick={() => {
-              router.push("/customer-dashboard/royalty");
+              window.location.href = "/customer-dashboard/royalty";
             }}
           >
             <span className="menu-icon">₹</span>
@@ -299,12 +284,10 @@ export default function CustomerShell({
           <button
             type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/sub-labels")
-                ? "active"
-                : ""
+              isActive("/customer-dashboard/sub-labels") ? "active" : ""
             }`}
             onClick={() => {
-              router.push("/customer-dashboard/sub-labels");
+              window.location.href = "/customer-dashboard/sub-labels";
             }}
           >
             <span className="menu-icon">🏷️</span>
@@ -315,12 +298,10 @@ export default function CustomerShell({
           <button
             type="button"
             className={`menu-item ${
-              isActive("/customer-dashboard/profile")
-                ? "active"
-                : ""
+              isActive("/customer-dashboard/profile") ? "active" : ""
             }`}
             onClick={() => {
-              router.push("/customer-dashboard/profile");
+              window.location.href = "/customer-dashboard/profile";
             }}
           >
             <span className="menu-icon">👤</span>
@@ -345,9 +326,7 @@ export default function CustomerShell({
       <main className="main-area">
         <header className="top-header">
           <div>
-            <h3>
-              {customer.customer_name || "Customer"}
-            </h3>
+            <h3>{customer.customer_name || "Customer"}</h3>
 
             {customer.label_name && (
               <span>{customer.label_name}</span>

@@ -498,21 +498,6 @@ export default function CustomerDashboard() {
         )
       : 0;
 
-  /* =========================
-     NAVIGATION
-  ========================= */
-
-  function goToSection(
-    id: string
-  ) {
-    document
-      .getElementById(id)
-      ?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-  }
-
   if (loading) {
     return (
       <div className="loading-page">
@@ -629,73 +614,94 @@ export default function CustomerDashboard() {
           <div className="menu-title">MAIN MENU</div>
 
           <nav className="sidebar-menu">
+
+            {/* DASHBOARD */}
             <button
               className="menu-item active"
               onClick={() =>
-                goToSection("dashboard-section")
+                router.push("/customer-dashboard")
               }
             >
               <span className="menu-icon">🏠</span>
               <span>Dashboard</span>
             </button>
 
+            {/* UPLOAD SONG */}
             <button
               className="menu-item"
-              onClick={() => router.push("/upload")}
+              onClick={() =>
+                router.push("/upload")
+              }
             >
               <span className="menu-icon">⬆️</span>
               <span>Upload Song</span>
             </button>
 
+            {/* MY SONGS */}
             <button
               className="menu-item"
               onClick={() =>
-                goToSection("my-songs-section")
+                router.push(
+                  "/customer-dashboard/my-songs"
+                )
               }
             >
               <span className="menu-icon">🎵</span>
               <span>My Songs</span>
             </button>
 
+            {/* ARTISTS */}
             <button
               className="menu-item"
               onClick={() =>
-                goToSection("artists-section")
+                router.push(
+                  "/customer-dashboard/artists"
+                )
               }
             >
               <span className="menu-icon">👥</span>
               <span>Artists</span>
             </button>
 
+            {/* ROYALTY */}
             <button
               className="menu-item"
               onClick={() =>
-                goToSection("royalty-section")
+                router.push(
+                  "/customer-dashboard/royalty"
+                )
               }
             >
               <span className="menu-icon">₹</span>
               <span>Royalty</span>
             </button>
 
+            {/* SUB LABELS */}
             <button
               className="menu-item"
               onClick={() =>
-                goToSection("sub-label-section")
+                router.push(
+                  "/customer-dashboard/sub-labels"
+                )
               }
             >
               <span className="menu-icon">🏷️</span>
               <span>Sub Labels</span>
             </button>
 
+            {/* PROFILE */}
             <button
               className="menu-item"
               onClick={() =>
-                goToSection("profile-section")
+                router.push(
+                  "/customer-dashboard/profile"
+                )
               }
             >
               <span className="menu-icon">👤</span>
               <span>Profile</span>
             </button>
+
           </nav>
 
           <div className="sidebar-bottom">
