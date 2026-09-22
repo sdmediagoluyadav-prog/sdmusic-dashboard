@@ -2,13 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY!;
-
-const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey
-);
 
 const supabaseAdmin = createClient(
   supabaseUrl,
@@ -26,7 +20,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const accessToken = authHeader.replace("Bearer ", "").trim();
+    const accessToken = authHeader
+      .replace("Bearer ", "")
+      .trim();
 
     if (!accessToken) {
       return NextResponse.json(
@@ -42,7 +38,7 @@ export async function GET(request: NextRequest) {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(accessToken);
+    } = await supabaseAdmin.auth.getUser(accessToken);
 
     if (userError || !user) {
       console.error("Auth user error:", userError);
@@ -72,7 +68,10 @@ export async function GET(request: NextRequest) {
       .maybeSingle();
 
     if (customerError) {
-      console.error("Customer role error:", customerError);
+      console.error(
+        "Customer role error:",
+        customerError
+      );
 
       return NextResponse.json(
         { error: customerError.message },
@@ -95,9 +94,6 @@ export async function GET(request: NextRequest) {
     // CUSTOMER EMAIL FALLBACK
     // --------------------------------
 
-    // Agar auth_user_id mapping kabhi mismatch ho,
-    // to same email se customer identify hoga.
-
     if (user.email) {
       const {
         data: customerByEmail,
@@ -107,7 +103,10 @@ export async function GET(request: NextRequest) {
         .select(
           "id, customer_name, label_name, email, auth_user_id, is_active"
         )
-        .eq("email", user.email.toLowerCase())
+        .eq(
+          "email",
+          user.email.toLowerCase()
+        )
         .maybeSingle();
 
       if (emailCustomerError) {
@@ -145,7 +144,10 @@ export async function GET(request: NextRequest) {
       .maybeSingle();
 
     if (subLabelError) {
-      console.error("Sub Label role error:", subLabelError);
+      console.error(
+        "Sub Label role error:",
+        subLabelError
+      );
 
       return NextResponse.json(
         { error: subLabelError.message },
@@ -176,7 +178,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Role API error:", error);
+    console.error(
+      "Role API error:",
+      error
+    );
 
     return NextResponse.json(
       {
