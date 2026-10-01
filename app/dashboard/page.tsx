@@ -19,123 +19,50 @@ type Song = {
   signed_audio_url?: string | null;
 };
 
-export default function AdminDashboard() {
+type Stats = {
+  totalSongs: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  artists: number;
+  albums: number;
+  customers: number;
+};
+
+export default function DashboardPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [totalSongs, setTotalSongs] = useState(0);
-  const [totalArtists, setTotalArtists] = useState(0);
-  const [totalAlbums, setTotalAlbums] = useState(0);
+  const [songs, setSongs] = useState<Song[]>([]);
 
-  const [pendingSongs, setPendingSongs] = useState(0);
-  const [approvedSongs, setApprovedSongs] = useState(0);
-  const [rejectedSongs, setRejectedSongs] = useState(0);
-  const [totalCustomers, setTotalCustomers] = useState(0);
+  const [stats, setStats] = useState<Stats>({
+    totalSongs: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    artists: 0,
+    albums: 0,
+    customers: 0,
+  });
 
-  const [recentSongs, setRecentSongs] = useState<Song[]>([]);
+  const [selectedSong, setSelectedSong] =
+    useState<Song | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [downloadLoading, setDownloadLoading] =
+    useState<"audio" | "cover" | null>(null);
 
-  useEffect(() => {
-    checkAdmin();
-  }, []);
-
-  // --------------------------------
-  // ADMIN PROTECTION
-  // --------------------------------
-
-  async function checkAdmin() {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      // Login nahi hai
-      if (!session) {
-        router.replace("/login");
-        return;
-      }
-
-      console.log("Checking Admin Role...");
-
-      // Server-side role check
-      const response = await fetch("/api/auth/role", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        cache: "no-store",
-      });
-
-      const roleData = await response.json();
-
-      console.log("Admin Dashboard Role:", roleData);
-
-      // Role API error
-      if (!response.ok) {
-        console.error("Admin role check failed:", roleData);
-
-        await supabase.auth.signOut();
-        router.replace("/login");
-        return;
-      }
-
-      // --------------------------------
-      // ONLY ADMIN CAN OPEN DASHBOARD
-      // --------------------------------
-
-      if (roleData.role !== "admin") {
-        console.log(
-          "Unauthorized Dashboard Access:",
-          roleData.role
-        );
-
-        // Customer
-        if (roleData.role === "customer") {
-          router.replace("/customer-dashboard");
-          return;
-        }
-
-        // Sub Label
-        if (roleData.role === "sub_label") {
-          router.replace("/sub-label-dashboard");
-          return;
-        }
-
-        // Unknown role
-        await supabase.auth.signOut();
-        router.replace("/login");
-        return;
-      }
-
-      // --------------------------------
-      // ADMIN VERIFIED
-      // --------------------------------
-
-      console.log("Admin verified successfully ✅");
-
-      await loadDashboard();
-    } catch (error) {
-      console.error("Admin protection error:", error);
-
-      await supabase.auth.signOut();
-      router.replace("/login");
-    }
-  }
-
-  // --------------------------------
+  // =========================================================
   // SIGNED URL
-  // --------------------------------
+  // =========================================================
 
   async function createSignedUrl(
     path: string | null
   ): Promise<string | null> {
     if (!path) return null;
 
-    // Agar already full URL hai
+    // Agar database me already direct URL saved hai
     if (
       path.startsWith("http://") ||
       path.startsWith("https://")
@@ -143,7 +70,6 @@ export default function AdminDashboard() {
       return path;
     }
 
-    // Supabase Storage path
     const { data, error } = await supabase.storage
       .from("songs")
       .createSignedUrl(path, 60 * 60);
@@ -156,19 +82,237 @@ export default function AdminDashboard() {
     return data.signedUrl;
   }
 
-  // --------------------------------
-  // LOAD DASHBOARD
-  // --------------------------------
+  // =========================================================
+  // SAFE FILE NAME
+  // =========================================================
 
-  async function loadDashboard() {
+  function safeFileName(name: string | null) {
+    const cleaned = (name || "song")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .trim();
+
+    return cleaned || "song";
+  }
+
+  // =========================================================
+  // FILE EXTENSION
+  // =========================================================
+
+  function getFileExtension(
+    path: string | null,
+    fallback: string
+  ): string {
+    if (!path) return fallback;
+
+    const cleanPath = path.split("?")[0];
+
+    const lastPart =
+      cleanPath.split("/").pop() || "";
+
+    if (!lastPart.includes(".")) {
+      return fallback;
+    }
+
+    const ext = lastPart.split(".").pop();
+
+    if (!ext) {
+      return fallback;
+    }
+
+    return `.${ext}`;
+  }
+
+  // =========================================================
+  // DOWNLOAD FILE
+  // =========================================================
+
+  async function downloadFile(
+    path: string | null,
+    filename: string,
+    type: "audio" | "cover"
+  ) {
+    if (!path) {
+      alert(
+        type === "audio"
+          ? "Audio file nahi mila."
+          : "Poster file nahi mila."
+      );
+
+      return;
+    }
+
     try {
-      setLoading(true);
+      setDownloadLoading(type);
 
-      // --------------------------------
+      // -----------------------------------------------------
+      // DIRECT URL
+      // -----------------------------------------------------
+
+      if (
+        path.startsWith("http://") ||
+        path.startsWith("https://")
+      ) {
+        const separator = path.includes("?")
+          ? "&"
+          : "?";
+
+        const downloadUrl =
+          `${path}${separator}download=${encodeURIComponent(
+            filename
+          )}`;
+
+        const link =
+          document.createElement("a");
+
+        link.href = downloadUrl;
+        link.download = filename;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        return;
+      }
+
+      // -----------------------------------------------------
+      // PRIVATE SUPABASE STORAGE
+      // -----------------------------------------------------
+
+      const { data, error } =
+        await supabase.storage
+          .from("songs")
+          .createSignedUrl(path, 60 * 60);
+
+      if (error || !data?.signedUrl) {
+        console.error(
+          "Signed download URL error:",
+          error
+        );
+
+        alert(
+          type === "audio"
+            ? "Audio download nahi ho pa raha hai."
+            : "Poster download nahi ho pa raha hai."
+        );
+
+        return;
+      }
+
+      // Signed URL ke saath download filename
+      const separator =
+        data.signedUrl.includes("?")
+          ? "&"
+          : "?";
+
+      const downloadUrl =
+        `${data.signedUrl}${separator}download=${encodeURIComponent(
+          filename
+        )}`;
+
+      const link =
+        document.createElement("a");
+
+      link.href = downloadUrl;
+      link.download = filename;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error(
+        "Download error:",
+        error
+      );
+
+      alert(
+        type === "audio"
+          ? "Audio download karte waqt error aaya."
+          : "Poster download karte waqt error aaya."
+      );
+    } finally {
+      setDownloadLoading(null);
+    }
+  }
+
+  // =========================================================
+  // LOAD DASHBOARD
+  // =========================================================
+
+  async function loadDashboard(
+    showRefresh = false
+  ) {
+    try {
+      if (showRefresh) {
+        setRefreshing(true);
+      }
+
+      // -----------------------------------------------------
+      // AUTH CHECK
+      // -----------------------------------------------------
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      // -----------------------------------------------------
+      // ROLE CHECK
+      // -----------------------------------------------------
+
+      try {
+        const roleResponse =
+          await fetch("/api/auth/role", {
+            cache: "no-store",
+          });
+
+        if (roleResponse.ok) {
+          const roleData =
+            await roleResponse.json();
+
+          const role = String(
+            roleData?.role || ""
+          ).toLowerCase();
+
+          if (role === "customer") {
+            router.replace(
+              "/customer-dashboard"
+            );
+
+            return;
+          }
+
+          if (
+            role === "sub-label" ||
+            role === "sublabel" ||
+            role === "sub_label"
+          ) {
+            router.replace(
+              "/sub-label-dashboard"
+            );
+
+            return;
+          }
+        }
+      } catch (roleError) {
+        console.error(
+          "Role check error:",
+          roleError
+        );
+      }
+
+      // -----------------------------------------------------
       // TOTAL SONGS
-      // --------------------------------
+      // -----------------------------------------------------
 
-      const { count: songsCount, error: songsCountError } =
+      const { count: totalSongs } =
         await supabase
           .from("songs")
           .select("*", {
@@ -176,1232 +320,1547 @@ export default function AdminDashboard() {
             head: true,
           });
 
-      if (songsCountError) {
-        console.error(songsCountError);
-      }
+      // -----------------------------------------------------
+      // PENDING
+      // -----------------------------------------------------
 
-      setTotalSongs(songsCount || 0);
-
-      // --------------------------------
-      // STATUS COUNTS
-      // --------------------------------
-
-      const { count: pendingCount } = await supabase
-        .from("songs")
-        .select("*", {
-          count: "exact",
-          head: true,
-        })
-        .eq("status", "Pending");
-
-      const { count: approvedCount } = await supabase
-        .from("songs")
-        .select("*", {
-          count: "exact",
-          head: true,
-        })
-        .eq("status", "Approved");
-
-      const { count: rejectedCount } = await supabase
-        .from("songs")
-        .select("*", {
-          count: "exact",
-          head: true,
-        })
-        .eq("status", "Rejected");
-
-      setPendingSongs(pendingCount || 0);
-      setApprovedSongs(approvedCount || 0);
-      setRejectedSongs(rejectedCount || 0);
-
-      // --------------------------------
-      // CUSTOMERS COUNT
-      // --------------------------------
-
-      const { count: customersCount } = await supabase
-        .from("customers")
-        .select("*", {
-          count: "exact",
-          head: true,
-        });
-
-      setTotalCustomers(customersCount || 0);
-
-      // --------------------------------
-      // ARTISTS + ALBUMS
-      // --------------------------------
-
-      const { data: allSongs, error: allSongsError } =
+      const { count: pending } =
         await supabase
           .from("songs")
-          .select("artist_name, album_name");
-
-      if (allSongsError) {
-        console.error(allSongsError);
-      }
-
-      const artistSet = new Set<string>();
-      const albumSet = new Set<string>();
-
-      (allSongs || []).forEach((song) => {
-        if (song.artist_name) {
-          artistSet.add(song.artist_name.trim());
-        }
-
-        if (song.album_name) {
-          albumSet.add(song.album_name.trim());
-        }
-      });
-
-      setTotalArtists(artistSet.size);
-      setTotalAlbums(albumSet.size);
-
-      // --------------------------------
-      // RECENT SONGS
-      // --------------------------------
-
-      const { data: songs, error: recentError } =
-        await supabase
-          .from("songs")
-          .select(
-            `
-              id,
-              song_title,
-              artist_name,
-              album_name,
-              cover_url,
-              audio_url,
-              status,
-              rejection_reason
-            `
-          )
-          .order("id", {
-            ascending: false,
+          .select("*", {
+            count: "exact",
+            head: true,
           })
-          .limit(5);
+          .eq("status", "Pending");
 
-      if (recentError) {
-        console.error(recentError);
-        setRecentSongs([]);
-        return;
-      }
+      // -----------------------------------------------------
+      // APPROVED
+      // -----------------------------------------------------
 
-      if (!songs || songs.length === 0) {
-        setRecentSongs([]);
-        return;
-      }
-
-      // --------------------------------
-      // CUSTOMER SONG LINKS
-      // --------------------------------
-
-      const songIds = songs.map((song) => song.id);
-
-      const { data: customerLinks, error: linksError } =
+      const { count: approved } =
         await supabase
-          .from("customer_songs")
-          .select("customer_id, song_id")
-          .in("song_id", songIds);
+          .from("songs")
+          .select("*", {
+            count: "exact",
+            head: true,
+          })
+          .eq("status", "Approved");
 
-      if (linksError) {
-        console.error(linksError);
-      }
+      // -----------------------------------------------------
+      // REJECTED
+      // -----------------------------------------------------
 
-      const customerIds = Array.from(
-        new Set(
-          (customerLinks || [])
-            .map((item) => item.customer_id)
-            .filter(Boolean)
-        )
+      const { count: rejected } =
+        await supabase
+          .from("songs")
+          .select("*", {
+            count: "exact",
+            head: true,
+          })
+          .eq("status", "Rejected");
+
+      // -----------------------------------------------------
+      // ARTISTS
+      // -----------------------------------------------------
+
+      const { data: artistRows } =
+        await supabase
+          .from("songs")
+          .select("artist_name");
+
+      const uniqueArtists = new Set(
+        (artistRows || [])
+          .map(
+            (item: any) =>
+              item.artist_name
+          )
+          .filter(Boolean)
       );
 
-      let customers: {
-        id: number;
-        customer_name: string | null;
-        label_name: string | null;
-      }[] = [];
+      // -----------------------------------------------------
+      // ALBUMS
+      // -----------------------------------------------------
+
+      const { data: albumRows } =
+        await supabase
+          .from("songs")
+          .select("album_name");
+
+      const uniqueAlbums = new Set(
+        (albumRows || [])
+          .map(
+            (item: any) =>
+              item.album_name
+          )
+          .filter(Boolean)
+      );
+
+      // -----------------------------------------------------
+      // CUSTOMERS
+      // -----------------------------------------------------
+
+      const { count: customers } =
+        await supabase
+          .from("customers")
+          .select("*", {
+            count: "exact",
+            head: true,
+          });
+
+      // -----------------------------------------------------
+      // LATEST SONGS
+      // -----------------------------------------------------
+
+      const {
+        data: latestSongs,
+        error: latestSongsError,
+      } = await supabase
+        .from("songs")
+        .select(`
+          id,
+          song_title,
+          artist_name,
+          album_name,
+          cover_url,
+          audio_url,
+          status,
+          rejection_reason
+        `)
+        .order("id", {
+          ascending: false,
+        })
+        .limit(5);
+
+      if (latestSongsError) {
+        console.error(
+          "Latest songs error:",
+          latestSongsError
+        );
+      }
+
+      // -----------------------------------------------------
+      // CUSTOMER SONG MAPPING
+      // -----------------------------------------------------
+
+      const songIds =
+        (latestSongs || []).map(
+          (song: any) => song.id
+        );
+
+      let customerSongRows: any[] = [];
+
+      if (songIds.length > 0) {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("customer_songs")
+          .select(`
+            song_id,
+            customer_id
+          `)
+          .in(
+            "song_id",
+            songIds
+          );
+
+        if (error) {
+          console.error(
+            "Customer songs error:",
+            error
+          );
+        }
+
+        customerSongRows = data || [];
+      }
+
+      // -----------------------------------------------------
+      // CUSTOMER IDS
+      // -----------------------------------------------------
+
+      const customerIds =
+        customerSongRows
+          .map(
+            (item) =>
+              item.customer_id
+          )
+          .filter(Boolean);
+
+      let customerRows: any[] = [];
 
       if (customerIds.length > 0) {
-        const { data: customerData, error: customerError } =
-          await supabase
-            .from("customers")
-            .select("id, customer_name, label_name")
-            .in("id", customerIds);
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("customers")
+          .select(`
+            id,
+            name,
+            label_name
+          `)
+          .in(
+            "id",
+            customerIds
+          );
 
-        if (customerError) {
-          console.error(customerError);
+        if (error) {
+          console.error(
+            "Customers fetch error:",
+            error
+          );
         }
 
-        customers = customerData || [];
+        customerRows = data || [];
       }
 
-      // --------------------------------
-      // FINAL SONG DATA
-      // --------------------------------
+      // -----------------------------------------------------
+      // MAP SONG DATA
+      // -----------------------------------------------------
 
-      const finalSongs: Song[] = await Promise.all(
-        songs.map(async (song) => {
-          const link = (customerLinks || []).find(
-            (item) => item.song_id === song.id
-          );
+      const finalSongs: Song[] =
+        await Promise.all(
+          (latestSongs || []).map(
+            async (song: any) => {
+              const customerSong =
+                customerSongRows.find(
+                  (item) =>
+                    item.song_id ===
+                    song.id
+                );
 
-          const customer = customers.find(
-            (item) => item.id === link?.customer_id
-          );
+              const customer =
+                customerRows.find(
+                  (item) =>
+                    item.id ===
+                    customerSong?.customer_id
+                );
 
-          const signedCoverUrl = await createSignedUrl(
-            song.cover_url
-          );
+              const signedCoverUrl =
+                await createSignedUrl(
+                  song.cover_url
+                );
 
-          const signedAudioUrl = await createSignedUrl(
-            song.audio_url
-          );
+              const signedAudioUrl =
+                await createSignedUrl(
+                  song.audio_url
+                );
 
-          return {
-            ...song,
-            customer_name:
-              customer?.customer_name || "Unknown Customer",
-            label_name:
-              customer?.label_name || "No Label",
-            signed_cover_url: signedCoverUrl,
-            signed_audio_url: signedAudioUrl,
-          };
-        })
-      );
+              return {
+                id: song.id,
+                song_title:
+                  song.song_title,
+                artist_name:
+                  song.artist_name,
+                album_name:
+                  song.album_name,
+                cover_url:
+                  song.cover_url,
+                audio_url:
+                  song.audio_url,
+                status:
+                  song.status,
+                rejection_reason:
+                  song.rejection_reason,
+                customer_name:
+                  customer?.name ||
+                  null,
+                label_name:
+                  customer?.label_name ||
+                  null,
+                signed_cover_url:
+                  signedCoverUrl,
+                signed_audio_url:
+                  signedAudioUrl,
+              };
+            }
+          )
+        );
 
-      setRecentSongs(finalSongs);
+      setSongs(finalSongs);
+
+      setStats({
+        totalSongs:
+          totalSongs || 0,
+        pending:
+          pending || 0,
+        approved:
+          approved || 0,
+        rejected:
+          rejected || 0,
+        artists:
+          uniqueArtists.size,
+        albums:
+          uniqueAlbums.size,
+        customers:
+          customers || 0,
+      });
     } catch (error) {
-      console.error("Dashboard loading error:", error);
+      console.error(
+        "Dashboard loading error:",
+        error
+      );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
-  // --------------------------------
+  // =========================================================
+  // INITIAL LOAD
+  // =========================================================
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  // =========================================================
   // APPROVE SONG
-  // --------------------------------
+  // =========================================================
 
-  async function approveSong(songId: number) {
-    const confirmApprove = window.confirm(
-      "Kya aap is song ko Approve karna chahte hain?"
-    );
+  async function approveSong(
+    songId: number
+  ) {
+    const confirmed =
+      window.confirm(
+        "Kya aap is song ko approve karna chahte hain?"
+      );
 
-    if (!confirmApprove) return;
+    if (!confirmed) return;
 
     try {
-      setActionLoading(songId);
-
-      const { error } = await supabase
-        .from("songs")
-        .update({
-          status: "Approved",
-          rejection_reason: null,
-        })
-        .eq("id", songId);
+      const { error } =
+        await supabase
+          .from("songs")
+          .update({
+            status: "Approved",
+            rejection_reason: null,
+          })
+          .eq("id", songId);
 
       if (error) {
-        alert("Approve nahi hua: " + error.message);
+        console.error(error);
+
+        alert(
+          "Song approve nahi hua."
+        );
+
         return;
       }
 
-      alert("Song successfully Approved ✅");
+      alert(
+        "Song Approved ✅"
+      );
 
       await loadDashboard();
+
+      if (selectedSong?.id === songId) {
+        setSelectedSong(null);
+      }
     } catch (error) {
       console.error(error);
-      alert("Kuch error aa gaya.");
-    } finally {
-      setActionLoading(null);
+
+      alert(
+        "Approve karte waqt error aaya."
+      );
     }
   }
 
-  // --------------------------------
+  // =========================================================
   // REJECT SONG
-  // --------------------------------
+  // =========================================================
 
-  async function rejectSong(songId: number) {
-    const reason = window.prompt(
-      "Song reject karne ka reason likhiye:"
-    );
+  async function rejectSong(
+    songId: number
+  ) {
+    const reason =
+      window.prompt(
+        "Reject karne ka reason likhiye:"
+      );
 
     if (reason === null) return;
 
-    const trimmedReason = reason.trim();
+    if (!reason.trim()) {
+      alert(
+        "Rejection reason likhna zaroori hai."
+      );
 
-    if (!trimmedReason) {
-      alert("Rejection reason likhna zaroori hai.");
       return;
     }
 
     try {
-      setActionLoading(songId);
-
-      const { error } = await supabase
-        .from("songs")
-        .update({
-          status: "Rejected",
-          rejection_reason: trimmedReason,
-        })
-        .eq("id", songId);
+      const { error } =
+        await supabase
+          .from("songs")
+          .update({
+            status: "Rejected",
+            rejection_reason:
+              reason.trim(),
+          })
+          .eq("id", songId);
 
       if (error) {
-        alert("Reject nahi hua: " + error.message);
+        console.error(error);
+
+        alert(
+          "Song reject nahi hua."
+        );
+
         return;
       }
 
-      alert("Song Rejected ❌");
+      alert(
+        "Song Rejected ❌"
+      );
 
       await loadDashboard();
+
+      if (selectedSong?.id === songId) {
+        setSelectedSong(null);
+      }
     } catch (error) {
       console.error(error);
-      alert("Kuch error aa gaya.");
-    } finally {
-      setActionLoading(null);
+
+      alert(
+        "Reject karte waqt error aaya."
+      );
     }
   }
 
-  // --------------------------------
+  // =========================================================
   // DELETE SONG
-  // --------------------------------
+  // =========================================================
 
-  async function deleteSong(songId: number) {
-    const confirmDelete = window.confirm(
-      "Kya aap sure hain? Ye song permanently delete ho jayega."
-    );
+  async function deleteSong(
+    songId: number
+  ) {
+    const confirmed =
+      window.confirm(
+        "Kya aap is song ko permanently delete karna chahte hain?"
+      );
 
-    if (!confirmDelete) return;
+    if (!confirmed) return;
 
     try {
-      setActionLoading(songId);
-
-      const { error } = await supabase
-        .from("songs")
-        .delete()
-        .eq("id", songId);
+      const { error } =
+        await supabase
+          .from("songs")
+          .delete()
+          .eq("id", songId);
 
       if (error) {
-        alert("Delete nahi hua: " + error.message);
+        console.error(error);
+
+        alert(
+          "Song delete nahi hua."
+        );
+
         return;
       }
 
-      alert("Song deleted successfully 🗑️");
+      alert(
+        "Song deleted successfully ✅"
+      );
+
+      if (selectedSong?.id === songId) {
+        setSelectedSong(null);
+      }
 
       await loadDashboard();
     } catch (error) {
       console.error(error);
-      alert("Delete karte time error aa gaya.");
-    } finally {
-      setActionLoading(null);
+
+      alert(
+        "Delete karte waqt error aaya."
+      );
     }
   }
 
-  // --------------------------------
+  // =========================================================
   // LOGOUT
-  // --------------------------------
+  // =========================================================
 
   async function logout() {
     await supabase.auth.signOut();
-    router.push("/login");
+
+    router.replace("/login");
   }
 
-  // --------------------------------
-  // STATUS STYLE
-  // --------------------------------
+  // =========================================================
+  // STATUS BADGE
+  // =========================================================
 
-  function getStatusStyle(status: string | null) {
-    if (status === "Approved") {
-      return {
-        background: "#064e3b",
-        color: "#6ee7b7",
-      };
+  function getStatusClass(
+    status: string | null
+  ) {
+    const value =
+      String(
+        status || ""
+      ).toLowerCase();
+
+    if (value === "approved") {
+      return "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
     }
 
-    if (status === "Rejected") {
-      return {
-        background: "#7f1d1d",
-        color: "#fca5a5",
-      };
+    if (value === "rejected") {
+      return "bg-red-500/15 text-red-400 border border-red-500/20";
     }
 
-    return {
-      background: "#78350f",
-      color: "#fcd34d",
-    };
+    return "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20";
   }
 
-  // --------------------------------
-  // SEARCH + FILTER
-  // --------------------------------
-
-  const filteredSongs = recentSongs.filter((song) => {
-    const searchText = search.toLowerCase().trim();
-
-    const matchesSearch =
-      !searchText ||
-      (song.song_title || "")
-        .toLowerCase()
-        .includes(searchText) ||
-      (song.artist_name || "")
-        .toLowerCase()
-        .includes(searchText) ||
-      (song.album_name || "")
-        .toLowerCase()
-        .includes(searchText) ||
-      (song.customer_name || "")
-        .toLowerCase()
-        .includes(searchText) ||
-      (song.label_name || "")
-        .toLowerCase()
-        .includes(searchText);
-
-    const matchesStatus =
-      statusFilter === "All" ||
-      song.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
-
-  // --------------------------------
+  // =========================================================
   // LOADING
-  // --------------------------------
+  // =========================================================
 
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#020617",
-          color: "white",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: "20px",
-          fontWeight: "bold",
-        }}
-      >
-        Loading Admin Dashboard... 🔐
+      <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-white/10 border-t-white rounded-full animate-spin mx-auto mb-4" />
+
+          <p className="text-white/60">
+            Loading Admin Dashboard...
+          </p>
+        </div>
       </div>
     );
   }
 
+  // =========================================================
+  // RENDER
+  // =========================================================
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#020617",
-        color: "white",
-        display: "flex",
-      }}
-    >
-      {/* =========================
-          SIDEBAR
-      ========================== */}
+    <div className="min-h-screen bg-[#09090b] text-white">
+      <div className="flex min-h-screen">
 
-      <aside
-        style={{
-          width: "250px",
-          background: "#0f172a",
-          borderRight: "1px solid #1e293b",
-          padding: "20px",
-          position: "fixed",
-          left: 0,
-          top: 0,
-          bottom: 0,
-          overflowY: "auto",
-          zIndex: 20,
-        }}
-      >
-        {/* LOGO */}
+        {/* =====================================================
+            SIDEBAR
+        ====================================================== */}
 
-        <div
-          style={{
-            textAlign: "center",
-            marginBottom: "30px",
-          }}
-        >
-          <img
-            src="/sd-logo.png"
-            alt="SD Media Entertainment"
-            style={{
-              width: "120px",
-              height: "120px",
-              objectFit: "contain",
-              display: "block",
-              margin: "0 auto 8px",
-            }}
-          />
+        <aside className="hidden lg:flex w-[260px] shrink-0 border-r border-white/10 bg-[#0d0d10] flex-col">
 
-          <p
-            style={{
-              margin: 0,
-              color: "#94a3b8",
-              fontSize: "12px",
-            }}
-          >
-            Admin Panel
-          </p>
-        </div>
+          <div className="p-6 border-b border-white/10">
+            <div className="flex items-center gap-3">
 
-        {/* NAVIGATION */}
+              <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center overflow-hidden">
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-          }}
-        >
-          <button
-            onClick={() => router.push("/dashboard")}
-            style={{
-              ...menuButtonStyle,
-              background: "#1e293b",
-            }}
-          >
-            🏠 Dashboard
-          </button>
+                <img
+                  src="/sd-logo.png"
+                  alt="SD Media"
+                  className="w-full h-full object-contain"
+                />
 
-          <button
-            onClick={() => router.push("/songs")}
-            style={menuButtonStyle}
-          >
-            🎵 All Songs
-          </button>
+              </div>
 
-          <button
-            onClick={() => router.push("/upload")}
-            style={menuButtonStyle}
-          >
-            ➕ Upload Song
-          </button>
+              <div>
+                <h1 className="font-bold text-lg">
+                  SD Music
+                </h1>
 
-          <button
-            onClick={() => router.push("/customers")}
-            style={menuButtonStyle}
-          >
-            👥 Customers
-          </button>
+                <p className="text-xs text-white/40">
+                  Admin Panel
+                </p>
+              </div>
 
-          <button
-            onClick={() => router.push("/customer-dashboard")}
-            style={menuButtonStyle}
-          >
-            🎧 Customer Dashboard
-          </button>
-
-          <button
-            onClick={loadDashboard}
-            style={menuButtonStyle}
-          >
-            🔄 Refresh
-          </button>
-
-          <button
-            onClick={logout}
-            style={{
-              ...menuButtonStyle,
-              marginTop: "20px",
-              background: "#7f1d1d",
-              color: "#fecaca",
-            }}
-          >
-            🚪 Logout
-          </button>
-        </div>
-      </aside>
-
-      {/* =========================
-          MAIN
-      ========================== */}
-
-      <main
-        style={{
-          marginLeft: "250px",
-          width: "calc(100% - 250px)",
-          padding: "30px",
-          minHeight: "100vh",
-        }}
-      >
-        {/* HEADER */}
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "20px",
-            marginBottom: "30px",
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "30px",
-                fontWeight: "800",
-              }}
-            >
-              Admin Dashboard
-            </h1>
-
-            <p
-              style={{
-                marginTop: "8px",
-                color: "#94a3b8",
-              }}
-            >
-              SD Media Entertainment Distribution
-            </p>
+            </div>
           </div>
 
-          <button
-            onClick={() => router.push("/upload")}
-            style={{
-              background: "#2563eb",
-              color: "white",
-              border: "none",
-              padding: "12px 18px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontWeight: "700",
-            }}
-          >
-            ➕ Upload Song
-          </button>
-        </div>
+          <nav className="p-4 space-y-2 flex-1">
 
-        {/* =========================
-            MAIN STATS
-        ========================== */}
+            {/* DASHBOARD */}
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "16px",
-            marginBottom: "25px",
-          }}
-        >
-          <StatCard
-            title="Total Songs"
-            value={totalSongs}
-            icon="🎵"
-          />
-
-          <StatCard
-            title="Pending"
-            value={pendingSongs}
-            icon="⏳"
-          />
-
-          <StatCard
-            title="Approved"
-            value={approvedSongs}
-            icon="✅"
-          />
-
-          <StatCard
-            title="Rejected"
-            value={rejectedSongs}
-            icon="❌"
-          />
-
-          <StatCard
-            title="Artists"
-            value={totalArtists}
-            icon="🎤"
-          />
-
-          <StatCard
-            title="Albums"
-            value={totalAlbums}
-            icon="💿"
-          />
-
-          <StatCard
-            title="Customers"
-            value={totalCustomers}
-            icon="👥"
-          />
-        </div>
-
-        {/* =========================
-            SEARCH + FILTER
-        ========================== */}
-
-        <div
-          style={{
-            background: "#0f172a",
-            border: "1px solid #1e293b",
-            borderRadius: "12px",
-            padding: "18px",
-            marginBottom: "20px",
-            display: "flex",
-            gap: "12px",
-            flexWrap: "wrap",
-          }}
-        >
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search song, artist, album, customer..."
-            style={{
-              flex: 1,
-              minWidth: "250px",
-              background: "#020617",
-              color: "white",
-              border: "1px solid #334155",
-              borderRadius: "8px",
-              padding: "12px",
-              outline: "none",
-            }}
-          />
-
-          <select
-            value={statusFilter}
-            onChange={(e) =>
-              setStatusFilter(e.target.value)
-            }
-            style={{
-              background: "#020617",
-              color: "white",
-              border: "1px solid #334155",
-              borderRadius: "8px",
-              padding: "12px",
-              outline: "none",
-              minWidth: "150px",
-            }}
-          >
-            <option value="All">All Status</option>
-            <option value="Pending">Pending</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Rejected</option>
-          </select>
-        </div>
-
-        {/* =========================
-            RECENT SONGS
-        ========================== */}
-
-        <section
-          style={{
-            background: "#0f172a",
-            border: "1px solid #1e293b",
-            borderRadius: "14px",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: "20px",
-              borderBottom: "1px solid #1e293b",
-            }}
-          >
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "20px",
-              }}
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/10 text-white text-sm font-medium"
             >
-              Recent Songs
-            </h2>
+              <span>📊</span>
+              Dashboard
+            </button>
 
-            <p
-              style={{
-                color: "#94a3b8",
-                margin: "6px 0 0",
-                fontSize: "13px",
-              }}
+            {/* ALL SONGS */}
+
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  "/dashboard/songs"
+                )
+              }
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
-              Latest uploaded songs
-            </p>
-          </div>
+              <span>🎵</span>
+              All Songs
+            </button>
 
-          <div
-            style={{
-              width: "100%",
-              overflowX: "auto",
-            }}
-          >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                minWidth: "1100px",
-              }}
+            {/* UPLOAD SONG */}
+
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/upload")
+              }
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
-              <thead>
-                <tr
-                  style={{
-                    background: "#020617",
-                    textAlign: "left",
-                  }}
-                >
-                  <th style={thStyle}>Cover</th>
-                  <th style={thStyle}>Song</th>
-                  <th style={thStyle}>Artist</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>
-                    Rejection Reason
-                  </th>
-                  <th style={thStyle}>
-                    Customer / Label
-                  </th>
-                  <th style={thStyle}>Play</th>
-                  <th style={thStyle}>Approval</th>
-                  <th style={thStyle}>Action</th>
-                </tr>
-              </thead>
+              <span>⬆️</span>
+              Upload Song
+            </button>
 
-              <tbody>
-                {filteredSongs.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={9}
-                      style={{
-                        padding: "40px",
-                        textAlign: "center",
-                        color: "#94a3b8",
-                      }}
-                    >
-                      No songs found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSongs.map((song) => (
-                    <tr
-                      key={song.id}
-                      style={{
-                        borderTop:
-                          "1px solid #1e293b",
-                      }}
-                    >
-                      {/* COVER */}
+            {/* CUSTOMERS */}
 
-                      <td style={tdStyle}>
-                        {song.signed_cover_url ? (
-                          <img
-                            src={song.signed_cover_url}
-                            alt={
-                              song.song_title ??
-                              "Song cover"
-                            }
-                            style={{
-                              width: "60px",
-                              height: "60px",
-                              objectFit: "cover",
-                              borderRadius: "8px",
-                              display: "block",
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: "60px",
-                              height: "60px",
-                              borderRadius: "8px",
-                              background: "#1e293b",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent:
-                                "center",
-                              color: "#64748b",
-                              fontSize: "12px",
-                            }}
-                          >
-                            No Cover
-                          </div>
-                        )}
-                      </td>
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/customers")
+              }
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
+            >
+              <span>👥</span>
+              Customers
+            </button>
 
-                      {/* SONG */}
+            {/* CUSTOMER DASHBOARD */}
 
-                      <td style={tdStyle}>
-                        <div
-                          style={{
-                            fontWeight: "700",
-                            color: "white",
-                          }}
-                        >
-                          {song.song_title ||
-                            "Untitled Song"}
-                        </div>
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  "/customer-dashboard"
+                )
+              }
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
+            >
+              <span>🏠</span>
+              Customer Dashboard
+            </button>
 
-                        {song.album_name && (
-                          <div
-                            style={{
-                              color: "#64748b",
-                              fontSize: "12px",
-                              marginTop: "4px",
-                            }}
-                          >
-                            Album:{" "}
-                            {song.album_name}
-                          </div>
-                        )}
-                      </td>
+          </nav>
 
-                      {/* ARTIST */}
+          <div className="p-4 border-t border-white/10">
 
-                      <td style={tdStyle}>
-                        {song.artist_name ||
-                          "Unknown Artist"}
-                      </td>
+            <button
+              type="button"
+              onClick={logout}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-sm font-medium"
+            >
+              🚪 Logout
+            </button>
 
-                      {/* STATUS */}
-
-                      <td style={tdStyle}>
-                        <span
-                          style={{
-                            ...getStatusStyle(
-                              song.status
-                            ),
-                            padding:
-                              "6px 10px",
-                            borderRadius:
-                              "999px",
-                            fontSize: "12px",
-                            fontWeight: "700",
-                            display:
-                              "inline-block",
-                          }}
-                        >
-                          {song.status ||
-                            "Pending"}
-                        </span>
-                      </td>
-
-                      {/* REJECTION REASON */}
-
-                      <td style={tdStyle}>
-                        {song.status ===
-                          "Rejected" &&
-                        song.rejection_reason ? (
-                          <div
-                            style={{
-                              color: "#fca5a5",
-                              background:
-                                "#450a0a",
-                              border:
-                                "1px solid #7f1d1d",
-                              padding: "8px",
-                              borderRadius:
-                                "6px",
-                              fontSize: "12px",
-                              maxWidth:
-                                "220px",
-                            }}
-                          >
-                            {
-                              song.rejection_reason
-                            }
-                          </div>
-                        ) : (
-                          <span
-                            style={{
-                              color: "#64748b",
-                              fontSize: "12px",
-                            }}
-                          >
-                            —
-                          </span>
-                        )}
-                      </td>
-
-                      {/* CUSTOMER */}
-
-                      <td style={tdStyle}>
-                        <div
-                          style={{
-                            fontWeight: "600",
-                          }}
-                        >
-                          {song.customer_name ||
-                            "Unknown"}
-                        </div>
-
-                        <div
-                          style={{
-                            color: "#94a3b8",
-                            fontSize: "12px",
-                            marginTop: "3px",
-                          }}
-                        >
-                          {song.label_name ||
-                            "No Label"}
-                        </div>
-                      </td>
-
-                      {/* AUDIO */}
-
-                      <td style={tdStyle}>
-                        {song.signed_audio_url ? (
-                          <audio
-                            controls
-                            preload="none"
-                            style={{
-                              width: "220px",
-                              maxWidth:
-                                "220px",
-                            }}
-                          >
-                            <source
-                              src={
-                                song.signed_audio_url
-                              }
-                            />
-                            Your browser does not
-                            support audio.
-                          </audio>
-                        ) : (
-                          <span
-                            style={{
-                              color: "#64748b",
-                              fontSize: "12px",
-                            }}
-                          >
-                            No Audio
-                          </span>
-                        )}
-                      </td>
-
-                      {/* APPROVAL */}
-
-                      <td style={tdStyle}>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection:
-                              "column",
-                            gap: "7px",
-                            minWidth: "100px",
-                          }}
-                        >
-                          <button
-                            onClick={() =>
-                              approveSong(
-                                song.id
-                              )
-                            }
-                            disabled={
-                              actionLoading ===
-                              song.id
-                            }
-                            style={{
-                              background:
-                                actionLoading ===
-                                song.id
-                                  ? "#334155"
-                                  : "#059669",
-                              color: "white",
-                              border: "none",
-                              padding:
-                                "8px 10px",
-                              borderRadius:
-                                "6px",
-                              cursor:
-                                actionLoading ===
-                                song.id
-                                  ? "not-allowed"
-                                  : "pointer",
-                              fontWeight: "700",
-                              fontSize: "12px",
-                            }}
-                          >
-                            {actionLoading ===
-                            song.id
-                              ? "Please wait..."
-                              : "✅ Approve"}
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              rejectSong(
-                                song.id
-                              )
-                            }
-                            disabled={
-                              actionLoading ===
-                              song.id
-                            }
-                            style={{
-                              background:
-                                actionLoading ===
-                                song.id
-                                  ? "#334155"
-                                  : "#dc2626",
-                              color: "white",
-                              border: "none",
-                              padding:
-                                "8px 10px",
-                              borderRadius:
-                                "6px",
-                              cursor:
-                                actionLoading ===
-                                song.id
-                                  ? "not-allowed"
-                                  : "pointer",
-                              fontWeight: "700",
-                              fontSize: "12px",
-                            }}
-                          >
-                            ❌ Reject
-                          </button>
-                        </div>
-                      </td>
-
-                      {/* DELETE */}
-
-                      <td style={tdStyle}>
-                        <button
-                          onClick={() =>
-                            deleteSong(song.id)
-                          }
-                          disabled={
-                            actionLoading ===
-                            song.id
-                          }
-                          style={{
-                            background:
-                              actionLoading ===
-                              song.id
-                                ? "#334155"
-                                : "#991b1b",
-                            color: "white",
-                            border: "none",
-                            padding:
-                              "9px 12px",
-                            borderRadius: "6px",
-                            cursor:
-                              actionLoading ===
-                              song.id
-                                ? "not-allowed"
-                                : "pointer",
-                            fontWeight: "700",
-                          }}
-                        >
-                          🗑️ Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
           </div>
-        </section>
+        </aside>
 
-        {/* FOOTER */}
+        {/* =====================================================
+            MAIN
+        ====================================================== */}
 
-        <div
-          style={{
-            marginTop: "25px",
-            textAlign: "center",
-            color: "#64748b",
-            fontSize: "12px",
-          }}
-        >
-          SD Media Entertainment • Admin
-          Dashboard
-        </div>
-      </main>
-    </div>
-  );
-}
+        <main className="flex-1 min-w-0">
 
-/* =====================================
-   STAT CARD
-===================================== */
+          {/* HEADER */}
 
-function StatCard({
-  title,
-  value,
-  icon,
-}: {
-  title: string;
-  value: number;
-  icon: string;
-}) {
-  return (
-    <div
-      style={{
-        background: "#0f172a",
-        border: "1px solid #1e293b",
-        borderRadius: "12px",
-        padding: "20px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "10px",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              color: "#94a3b8",
-              fontSize: "13px",
-              marginBottom: "8px",
-            }}
-          >
-            {title}
+          <header className="sticky top-0 z-20 border-b border-white/10 bg-[#09090b]/90 backdrop-blur-xl">
+
+            <div className="px-4 sm:px-6 lg:px-8 py-4">
+
+              <div className="flex items-center justify-between gap-4">
+
+                <div>
+
+                  <p className="text-xs text-white/40 mb-1">
+                    Admin Dashboard
+                  </p>
+
+                  <h2 className="text-xl sm:text-2xl font-bold">
+                    Welcome back 👋
+                  </h2>
+
+                </div>
+
+                <div className="flex items-center gap-2">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      loadDashboard(true)
+                    }
+                    disabled={refreshing}
+                    className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm disabled:opacity-50"
+                  >
+                    {refreshing
+                      ? "Refreshing..."
+                      : "🔄 Refresh"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="lg:hidden px-4 py-2.5 rounded-xl bg-red-500/10 text-red-400 text-sm"
+                  >
+                    Logout
+                  </button>
+
+                </div>
+
+              </div>
+
+            </div>
+          </header>
+
+          <div className="p-4 sm:p-6 lg:p-8">
+
+            {/* =================================================
+                STAT CARDS
+            ================================================== */}
+
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+
+              {/* TOTAL */}
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
+                <div className="flex items-center justify-between mb-4">
+
+                  <span className="text-sm text-white/50">
+                    Total Songs
+                  </span>
+
+                  <span className="text-xl">
+                    🎵
+                  </span>
+
+                </div>
+
+                <p className="text-3xl font-bold">
+                  {stats.totalSongs}
+                </p>
+
+              </div>
+
+              {/* PENDING */}
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
+                <div className="flex items-center justify-between mb-4">
+
+                  <span className="text-sm text-white/50">
+                    Pending
+                  </span>
+
+                  <span className="text-xl">
+                    ⏳
+                  </span>
+
+                </div>
+
+                <p className="text-3xl font-bold text-yellow-400">
+                  {stats.pending}
+                </p>
+
+              </div>
+
+              {/* APPROVED */}
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
+                <div className="flex items-center justify-between mb-4">
+
+                  <span className="text-sm text-white/50">
+                    Approved
+                  </span>
+
+                  <span className="text-xl">
+                    ✅
+                  </span>
+
+                </div>
+
+                <p className="text-3xl font-bold text-emerald-400">
+                  {stats.approved}
+                </p>
+
+              </div>
+
+              {/* REJECTED */}
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
+                <div className="flex items-center justify-between mb-4">
+
+                  <span className="text-sm text-white/50">
+                    Rejected
+                  </span>
+
+                  <span className="text-xl">
+                    ❌
+                  </span>
+
+                </div>
+
+                <p className="text-3xl font-bold text-red-400">
+                  {stats.rejected}
+                </p>
+
+              </div>
+
+            </div>
+
+            {/* =================================================
+                SECONDARY STATS
+            ================================================== */}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
+                <p className="text-xs text-white/40 mb-1">
+                  Artists
+                </p>
+
+                <p className="text-xl font-bold">
+                  {stats.artists}
+                </p>
+
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
+                <p className="text-xs text-white/40 mb-1">
+                  Albums
+                </p>
+
+                <p className="text-xl font-bold">
+                  {stats.albums}
+                </p>
+
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
+                <p className="text-xs text-white/40 mb-1">
+                  Customers
+                </p>
+
+                <p className="text-xl font-bold">
+                  {stats.customers}
+                </p>
+
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
+                <p className="text-xs text-white/40 mb-1">
+                  Dashboard
+                </p>
+
+                <p className="text-xl font-bold">
+                  Active
+                </p>
+
+              </div>
+
+            </div>
+
+            {/* =================================================
+                RECENT SONGS
+            ================================================== */}
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+
+              <div className="p-5 sm:p-6 border-b border-white/10">
+
+                <div className="flex items-center justify-between gap-4">
+
+                  <div>
+
+                    <h3 className="text-lg font-bold">
+                      Recent Songs
+                    </h3>
+
+                    <p className="text-sm text-white/40 mt-1">
+                      Latest uploaded music
+                    </p>
+
+                  </div>
+
+                  <span className="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/50">
+                    Latest 5
+                  </span>
+
+                </div>
+
+              </div>
+
+              {songs.length === 0 ? (
+
+                <div className="p-10 text-center">
+
+                  <div className="text-4xl mb-3">
+                    🎵
+                  </div>
+
+                  <p className="text-white/50">
+                    Abhi koi song available nahi hai.
+                  </p>
+
+                </div>
+
+              ) : (
+
+                <div className="overflow-x-auto">
+
+                  <table className="w-full min-w-[1100px]">
+
+                    <thead>
+
+                      <tr className="border-b border-white/10 text-left">
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Cover
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Song
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Artist
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Status
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Rejection Reason
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Customer / Label
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Play
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Approval
+                        </th>
+
+                        <th className="px-5 py-4 text-xs font-medium text-white/40">
+                          Action
+                        </th>
+
+                      </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                      {songs.map((song) => (
+
+                        <tr
+                          key={song.id}
+                          className="border-b border-white/5 hover:bg-white/[0.02] transition"
+                        >
+
+                          {/* COVER */}
+
+                          <td className="px-5 py-4">
+
+                            <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/5 border border-white/10">
+
+                              {song.signed_cover_url ? (
+
+                                <img
+                                  src={
+                                    song.signed_cover_url
+                                  }
+                                  alt={
+                                    song.song_title ||
+                                    "Song"
+                                  }
+                                  className="w-full h-full object-cover"
+                                />
+
+                              ) : (
+
+                                <div className="w-full h-full flex items-center justify-center text-xl">
+                                  🎵
+                                </div>
+
+                              )}
+
+                            </div>
+
+                          </td>
+
+                          {/* SONG */}
+
+                          <td className="px-5 py-4">
+
+                            <div className="max-w-[220px]">
+
+                              <p className="font-semibold truncate">
+                                {song.song_title ||
+                                  "Untitled Song"}
+                              </p>
+
+                              <p className="text-xs text-white/40 truncate mt-1">
+                                {song.album_name ||
+                                  "No Album"}
+                              </p>
+
+                            </div>
+
+                          </td>
+
+                          {/* ARTIST */}
+
+                          <td className="px-5 py-4">
+
+                            <p className="text-sm text-white/70">
+                              {song.artist_name ||
+                                "Unknown Artist"}
+                            </p>
+
+                          </td>
+
+                          {/* STATUS */}
+
+                          <td className="px-5 py-4">
+
+                            <span
+                              className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getStatusClass(
+                                song.status
+                              )}`}
+                            >
+                              {song.status ||
+                                "Pending"}
+                            </span>
+
+                          </td>
+
+                          {/* REJECTION */}
+
+                          <td className="px-5 py-4">
+
+                            {song.rejection_reason ? (
+
+                              <p className="max-w-[220px] text-xs text-red-300/80">
+                                {
+                                  song.rejection_reason
+                                }
+                              </p>
+
+                            ) : (
+
+                              <span className="text-xs text-white/30">
+                                —
+                              </span>
+
+                            )}
+
+                          </td>
+
+                          {/* CUSTOMER */}
+
+                          <td className="px-5 py-4">
+
+                            <div>
+
+                              <p className="text-sm">
+                                {song.customer_name ||
+                                  "—"}
+                              </p>
+
+                              {song.label_name && (
+
+                                <p className="text-xs text-white/40 mt-1">
+                                  {song.label_name}
+                                </p>
+
+                              )}
+
+                            </div>
+
+                          </td>
+
+                          {/* AUDIO */}
+
+                          <td className="px-5 py-4">
+
+                            {song.signed_audio_url ? (
+
+                              <audio
+                                controls
+                                preload="none"
+                                className="w-[230px] h-9"
+                                src={
+                                  song.signed_audio_url
+                                }
+                              />
+
+                            ) : (
+
+                              <span className="text-xs text-white/30">
+                                Audio unavailable
+                              </span>
+
+                            )}
+
+                          </td>
+
+                          {/* APPROVAL */}
+
+                          <td className="px-5 py-4">
+
+                            <div className="flex items-center gap-2">
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  approveSong(
+                                    song.id
+                                  )
+                                }
+                                className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-xs font-medium"
+                              >
+                                ✓ Approve
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  rejectSong(
+                                    song.id
+                                  )
+                                }
+                                className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
+                              >
+                                ✕ Reject
+                              </button>
+
+                            </div>
+
+                          </td>
+
+                          {/* ACTION */}
+
+                          <td className="px-5 py-4">
+
+                            <div className="flex flex-col gap-2 w-[120px]">
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedSong(
+                                    song
+                                  )
+                                }
+                                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 transition text-xs font-medium"
+                              >
+                                👁️ Details
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  deleteSong(
+                                    song.id
+                                  )
+                                }
+                                className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
+                              >
+                                🗑️ Delete
+                              </button>
+
+                            </div>
+
+                          </td>
+
+                        </tr>
+
+                      ))}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+              )}
+
+            </div>
+
           </div>
 
-          <div
-            style={{
-              fontSize: "28px",
-              fontWeight: "800",
-            }}
-          >
-            {value}
-          </div>
-        </div>
+        </main>
 
-        <div
-          style={{
-            fontSize: "28px",
-          }}
-        >
-          {icon}
-        </div>
       </div>
+
+      {/* =====================================================
+          SONG DETAILS MODAL
+      ====================================================== */}
+
+      {selectedSong && (
+
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() =>
+            setSelectedSong(null)
+          }
+        >
+
+          <div
+            className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#111114] shadow-2xl"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+
+            {/* MODAL HEADER */}
+
+            <div className="sticky top-0 z-10 px-5 sm:px-6 py-4 border-b border-white/10 bg-[#111114]/95 backdrop-blur-xl flex items-center justify-between">
+
+              <div>
+
+                <h2 className="text-lg sm:text-xl font-bold">
+                  Song Details
+                </h2>
+
+                <p className="text-xs text-white/40 mt-1">
+                  Song information & files
+                </p>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedSong(null)
+                }
+                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition"
+              >
+                ✕
+              </button>
+
+            </div>
+
+            {/* MODAL BODY */}
+
+            <div className="p-5 sm:p-6">
+
+              <div className="grid md:grid-cols-[220px_1fr] gap-6">
+
+                {/* POSTER */}
+
+                <div>
+
+                  <div className="aspect-square rounded-2xl overflow-hidden bg-white/5 border border-white/10">
+
+                    {selectedSong.signed_cover_url ? (
+
+                      <img
+                        src={
+                          selectedSong.signed_cover_url
+                        }
+                        alt={
+                          selectedSong.song_title ||
+                          "Song Poster"
+                        }
+                        className="w-full h-full object-cover"
+                      />
+
+                    ) : (
+
+                      <div className="w-full h-full flex items-center justify-center text-5xl">
+                        🎵
+                      </div>
+
+                    )}
+
+                  </div>
+
+                  {/* DOWNLOAD POSTER */}
+
+                  <button
+                    type="button"
+                    disabled={
+                      downloadLoading ===
+                      "cover"
+                    }
+                    onClick={() => {
+
+                      const ext =
+                        getFileExtension(
+                          selectedSong.cover_url,
+                          ".jpg"
+                        );
+
+                      const name =
+                        safeFileName(
+                          selectedSong.song_title
+                        );
+
+                      downloadFile(
+                        selectedSong.cover_url,
+                        `${name}-poster${ext}`,
+                        "cover"
+                      );
+                    }}
+                    className="w-full mt-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm font-medium disabled:opacity-50"
+                  >
+                    {downloadLoading ===
+                    "cover"
+                      ? "Downloading..."
+                      : "⬇️ Download Poster"}
+                  </button>
+
+                </div>
+
+                {/* SONG INFO */}
+
+                <div>
+
+                  <div className="mb-5">
+
+                    <span
+                      className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getStatusClass(
+                        selectedSong.status
+                      )}`}
+                    >
+                      {selectedSong.status ||
+                        "Pending"}
+                    </span>
+
+                  </div>
+
+                  <div className="space-y-4">
+
+                    <div>
+
+                      <p className="text-xs text-white/40 mb-1">
+                        Song Name
+                      </p>
+
+                      <p className="font-semibold text-lg">
+                        {selectedSong.song_title ||
+                          "Untitled Song"}
+                      </p>
+
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-4">
+
+                      <div>
+
+                        <p className="text-xs text-white/40 mb-1">
+                          Artist
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.artist_name ||
+                            "—"}
+                        </p>
+
+                      </div>
+
+                      <div>
+
+                        <p className="text-xs text-white/40 mb-1">
+                          Album
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.album_name ||
+                            "—"}
+                        </p>
+
+                      </div>
+
+                      <div>
+
+                        <p className="text-xs text-white/40 mb-1">
+                          Customer
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.customer_name ||
+                            "—"}
+                        </p>
+
+                      </div>
+
+                      <div>
+
+                        <p className="text-xs text-white/40 mb-1">
+                          Label
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.label_name ||
+                            "—"}
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                    {/* REJECTION REASON */}
+
+                    {selectedSong.rejection_reason && (
+
+                      <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+
+                        <p className="text-xs text-red-300/60 mb-1">
+                          Rejection Reason
+                        </p>
+
+                        <p className="text-sm text-red-300">
+                          {
+                            selectedSong.rejection_reason
+                          }
+                        </p>
+
+                      </div>
+
+                    )}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* AUDIO SECTION */}
+
+              <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
+                <div className="flex items-center justify-between gap-4 mb-4">
+
+                  <div>
+
+                    <h3 className="font-semibold">
+                      Audio
+                    </h3>
+
+                    <p className="text-xs text-white/40 mt-1">
+                      Listen or download the original audio
+                    </p>
+
+                  </div>
+
+                  <span className="text-xl">
+                    🎧
+                  </span>
+
+                </div>
+
+                {selectedSong.signed_audio_url ? (
+
+                  <audio
+                    controls
+                    className="w-full"
+                    src={
+                      selectedSong.signed_audio_url
+                    }
+                  />
+
+                ) : (
+
+                  <div className="rounded-xl bg-white/5 p-4 text-sm text-white/40">
+                    Audio file available nahi hai.
+                  </div>
+
+                )}
+
+                {/* DOWNLOAD AUDIO */}
+
+                <button
+                  type="button"
+                  disabled={
+                    downloadLoading ===
+                    "audio"
+                  }
+                  onClick={() => {
+
+                    const ext =
+                      getFileExtension(
+                        selectedSong.audio_url,
+                        ".mp3"
+                      );
+
+                    const name =
+                      safeFileName(
+                        selectedSong.song_title
+                      );
+
+                    downloadFile(
+                      selectedSong.audio_url,
+                      `${name}${ext}`,
+                      "audio"
+                    );
+                  }}
+                  className="w-full mt-4 px-4 py-3 rounded-xl bg-white text-black hover:bg-white/90 transition text-sm font-semibold disabled:opacity-50"
+                >
+                  {downloadLoading ===
+                  "audio"
+                    ? "Downloading..."
+                    : "⬇️ Download Audio"}
+                </button>
+
+              </div>
+
+              {/* MODAL ACTIONS */}
+
+              <div className="grid sm:grid-cols-3 gap-3 mt-6">
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    approveSong(
+                      selectedSong.id
+                    )
+                  }
+                  className="px-4 py-3 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-sm font-medium"
+                >
+                  ✓ Approve
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    rejectSong(
+                      selectedSong.id
+                    )
+                  }
+                  className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-sm font-medium"
+                >
+                  ✕ Reject
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    deleteSong(
+                      selectedSong.id
+                    )
+                  }
+                  className="px-4 py-3 rounded-xl bg-red-500/5 text-red-400 hover:bg-red-500/15 transition text-sm font-medium"
+                >
+                  🗑️ Delete
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
     </div>
   );
 }
-
-/* =====================================
-   STYLES
-===================================== */
-
-const menuButtonStyle = {
-  width: "100%",
-  background: "transparent",
-  color: "#cbd5e1",
-  border: "none",
-  padding: "12px 14px",
-  borderRadius: "8px",
-  textAlign: "left" as const,
-  cursor: "pointer",
-  fontSize: "14px",
-  fontWeight: "600",
-};
-
-const thStyle = {
-  padding: "14px",
-  color: "#94a3b8",
-  fontSize: "12px",
-  fontWeight: "700",
-  whiteSpace: "nowrap" as const,
-};
-
-const tdStyle = {
-  padding: "14px",
-  verticalAlign: "middle" as const,
-  color: "#e2e8f0",
-  fontSize: "13px",
-};

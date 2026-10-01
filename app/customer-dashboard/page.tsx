@@ -485,6 +485,75 @@ export default function CustomerDashboard() {
   }
 
   /* =====================================================
+     RESET SUB LABEL PASSWORD
+  ===================================================== */
+
+  async function resetSubLabelPassword(
+    label: SubLabel
+  ) {
+    const password = prompt(
+      `New password for ${label.sub_label_name}\n\nPassword कम से कम 6 characters का होना चाहिए`
+    );
+
+    if (password === null) return;
+
+    if (password.length < 6) {
+      alert(
+        "Password कम से कम 6 characters का होना चाहिए"
+      );
+      return;
+    }
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        alert(
+          "Session expire ho gaya. Dobara login karo."
+        );
+        router.replace("/login");
+        return;
+      }
+
+      const response = await fetch(
+        "/api/sub-labels/reset-password",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            sub_label_id: label.id,
+            password,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        alert(
+          result.error ||
+            "Sub Label password reset nahi hua ❌"
+        );
+        return;
+      }
+
+      alert(
+        `Sub Label password successfully reset ✅\n\n${label.sub_label_name}`
+      );
+    } catch (error) {
+      console.error(error);
+      alert(
+        "Sub Label password reset karte waqt error aa gaya ❌"
+      );
+    }
+  }
+
+  /* =====================================================
      DELETE SUB LABEL
   ===================================================== */
 
@@ -2808,6 +2877,17 @@ export default function CustomerDashboard() {
                         </span>
 
                         <button
+                          className="reset-password-button"
+                          onClick={() =>
+                            resetSubLabelPassword(
+                              label
+                            )
+                          }
+                        >
+                          Reset Password
+                        </button>
+
+                        <button
                           className="delete-button"
                           onClick={() =>
                             deleteSubLabel(
@@ -4267,6 +4347,16 @@ export default function CustomerDashboard() {
           color: #6c89a6;
           font-size: 8px;
           margin-top: 3px;
+        }
+
+        .reset-password-button {
+          border: 1px solid #245a7d;
+          background: #092c51;
+          color: #7dd3fc;
+          padding: 6px 9px;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 8px;
         }
 
         .delete-button {
