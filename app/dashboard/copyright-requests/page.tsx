@@ -1,6 +1,6 @@
 
 "use client";
-
+// Copyright Requests admin page
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
