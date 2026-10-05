@@ -1,13 +1,14 @@
-
 "use client";
 // Copyright Requests admin page
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Customer = {
   id: number;
-  name: string | null;
+  customer_name?: string | null;
+  name?: string | null;
   label_name: string | null;
 };
 
@@ -20,13 +21,13 @@ type CopyrightRequest = {
   status: string;
   rejection_reason: string | null;
   created_at: string;
+  customer?: Customer | null;
 };
 
 export default function CopyrightRequestsPage() {
   const router = useRouter();
 
   const [requests, setRequests] = useState<CopyrightRequest[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
@@ -36,96 +37,133 @@ export default function CopyrightRequestsPage() {
 
   async function checkAdmin() {
     try {
+      setLoading(true);
+
       const {
         data: { session },
+        error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (!session) {
+      console.log("Copyright Admin Session:", session);
+      console.log("Copyright Session Error:", sessionError);
+
+      if (sessionError) {
+        console.error("Session error:", sessionError);
         router.push("/login");
         return;
       }
 
+      if (!session) {
+        console.error("No active Supabase session.");
+        router.push("/login");
+        return;
+      }
+
+      if (!session.access_token) {
+        console.error("Access token missing.");
+        router.push("/login");
+        return;
+      }
+
+      console.log("Calling role API...");
+
       const response = await fetch("/api/auth/role", {
+        method: "GET",
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
       });
 
       const roleData = await response.json();
 
+      console.log("Role API Status:", response.status);
+      console.log("Role API Response:", roleData);
+
+      if (!response.ok) {
+        console.error("Role API failed:", roleData);
+
+        // Token expired/invalid
+        if (response.status === 401) {
+          await supabase.auth.signOut();
+          router.push("/login");
+          return;
+        }
+
+        setLoading(false);
+        return;
+      }
+
       if (roleData?.role !== "admin") {
+        console.error("User is not admin:", roleData);
         router.push("/customer-dashboard");
         return;
       }
 
-      await loadRequests();
+      console.log("Admin verified successfully.");
+
+      await loadRequests(session.access_token);
     } catch (error) {
       console.error("Admin check error:", error);
       setLoading(false);
     }
   }
 
-  async function loadRequests() {
+  async function loadRequests(accessToken?: string) {
     setLoading(true);
 
     try {
-      const { data: requestData, error: requestError } = await supabase
-        .from("Copyright Removal Request")
-        .select(`
-          id,
-          customer_id,
-          video_url,
-          reason,
-          details,
-          status,
-          rejection_reason,
-          created_at
-        `)
-        .order("created_at", { ascending: false });
+      let token = accessToken;
 
-      if (requestError) {
-        console.error("Copyright request error:", requestError);
-        alert(requestError.message);
-        setLoading(false);
+      // Agar token nahi mila to current session se le lo
+      if (!token) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session?.access_token) {
+          alert("Session expired. Please login again.");
+          router.push("/login");
+          return;
+        }
+
+        token = session.access_token;
+      }
+
+      const response = await fetch("/api/copyright-requests", {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const result = await response.json();
+
+      console.log("Copyright API Status:", response.status);
+      console.log("Copyright API Response:", result);
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          alert("Session expired. Please login again.");
+          await supabase.auth.signOut();
+          router.push("/login");
+          return;
+        }
+
+        alert(result?.error || "Copyright requests load nahi ho payi.");
         return;
       }
 
-      const loadedRequests = (requestData || []) as CopyrightRequest[];
-
-      setRequests(loadedRequests);
-
-      const customerIds = [
-        ...new Set(
-          loadedRequests
-            .map((request) => request.customer_id)
-            .filter(Boolean)
-        ),
-      ];
-
-      if (customerIds.length > 0) {
-        const { data: customerData, error: customerError } =
-          await supabase
-            .from("customers")
-            .select("id, name, label_name")
-            .in("id", customerIds);
-
-        if (customerError) {
-          console.error("Customer fetch error:", customerError);
-        } else {
-          setCustomers((customerData || []) as Customer[]);
-        }
-      } else {
-        setCustomers([]);
-      }
+      setRequests(result?.requests || []);
     } catch (error) {
       console.error("Load requests error:", error);
+      alert("Copyright requests load karte waqt error aaya.");
     } finally {
       setLoading(false);
     }
-  }
-
-  function getCustomer(customerId: number) {
-    return customers.find((customer) => customer.id === customerId);
   }
 
   async function updateStatus(
@@ -165,25 +203,44 @@ export default function CopyrightRequestsPage() {
     setUpdatingId(requestId);
 
     try {
-      const updateData =
-        status === "Rejected"
-          ? {
-              status: "Rejected",
-              rejection_reason: rejectionReason,
-            }
-          : {
-              status: "Approved",
-              rejection_reason: null,
-            };
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      const { error } = await supabase
-        .from("Copyright Removal Request")
-        .update(updateData)
-        .eq("id", requestId);
+      if (!session?.access_token) {
+        alert("Session expired. Please login again.");
+        router.push("/login");
+        return;
+      }
 
-      if (error) {
-        console.error("Update request error:", error);
-        alert(error.message);
+      const response = await fetch("/api/copyright-requests", {
+        method: "PATCH",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: requestId,
+          status,
+          rejection_reason: rejectionReason,
+        }),
+      });
+
+      const result = await response.json();
+
+      console.log("Update API Status:", response.status);
+      console.log("Update API Response:", result);
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          alert("Session expired. Please login again.");
+          await supabase.auth.signOut();
+          router.push("/login");
+          return;
+        }
+
+        alert(result?.error || "Status update nahi ho paya.");
         return;
       }
 
@@ -238,6 +295,14 @@ export default function CopyrightRequestsPage() {
     }
   }
 
+  function getCustomerName(customer?: Customer | null) {
+    if (!customer) {
+      return null;
+    }
+
+    return customer.customer_name || customer.name || null;
+  }
+
   return (
     <div className="min-h-screen bg-[#07111f] text-white">
       <div className="flex min-h-screen">
@@ -267,7 +332,7 @@ export default function CopyrightRequestsPage() {
 
             <button
               type="button"
-              onClick={() => router.push("/dashboard/songs")}
+              onClick={() => router.push("/songs")}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>🎵</span>
@@ -276,7 +341,7 @@ export default function CopyrightRequestsPage() {
 
             <button
               type="button"
-              onClick={() => router.push("/dashboard/upload")}
+              onClick={() => router.push("/upload")}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>⬆️</span>
@@ -285,7 +350,7 @@ export default function CopyrightRequestsPage() {
 
             <button
               type="button"
-              onClick={() => router.push("/dashboard/customers")}
+              onClick={() => router.push("/customers")}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>👥</span>
@@ -344,7 +409,7 @@ export default function CopyrightRequestsPage() {
 
               <button
                 type="button"
-                onClick={loadRequests}
+                onClick={() => loadRequests()}
                 disabled={loading}
                 className="px-5 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition disabled:opacity-50"
               >
@@ -371,7 +436,7 @@ export default function CopyrightRequestsPage() {
             ) : (
               <div className="space-y-5">
                 {requests.map((request) => {
-                  const customer = getCustomer(request.customer_id);
+                  const customer = request.customer;
 
                   return (
                     <div
@@ -401,7 +466,7 @@ export default function CopyrightRequestsPage() {
                               </p>
 
                               <p className="font-medium">
-                                {customer?.name ||
+                                {getCustomerName(customer) ||
                                   `Customer #${request.customer_id}`}
                               </p>
 
