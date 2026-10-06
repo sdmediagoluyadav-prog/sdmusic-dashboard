@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -10,6 +9,12 @@ type Song = {
   song_title: string | null;
   artist_name: string | null;
   album_name: string | null;
+  singer_name: string | null;
+  composer: string | null;
+  lyricist: string | null;
+  genre: string | null;
+  language: string | null;
+  release_date: string | null;
   cover_url: string | null;
   audio_url: string | null;
   status: string | null;
@@ -35,6 +40,7 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [songs, setSongs] = useState<Song[]>([]);
 
   const [stats, setStats] = useState<Stats>({
@@ -48,6 +54,7 @@ export default function DashboardPage() {
   });
 
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+
   const [downloadLoading, setDownloadLoading] = useState<
     "audio" | "cover" | null
   >(null);
@@ -61,7 +68,10 @@ export default function DashboardPage() {
   ): Promise<string | null> {
     if (!path) return null;
 
-    if (path.startsWith("http://") || path.startsWith("https://")) {
+    if (
+      path.startsWith("http://") ||
+      path.startsWith("https://")
+    ) {
       return path;
     }
 
@@ -136,14 +146,17 @@ export default function DashboardPage() {
     try {
       setDownloadLoading(type);
 
-      // DIRECT URL
-      if (path.startsWith("http://") || path.startsWith("https://")) {
+      if (
+        path.startsWith("http://") ||
+        path.startsWith("https://")
+      ) {
         const separator = path.includes("?") ? "&" : "?";
 
         const downloadUrl =
           `${path}${separator}download=${encodeURIComponent(filename)}`;
 
         const link = document.createElement("a");
+
         link.href = downloadUrl;
         link.download = filename;
         link.target = "_blank";
@@ -156,13 +169,15 @@ export default function DashboardPage() {
         return;
       }
 
-      // PRIVATE SUPABASE STORAGE
       const { data, error } = await supabase.storage
         .from("songs")
         .createSignedUrl(path, 60 * 60);
 
       if (error || !data?.signedUrl) {
-        console.error("Signed download URL error:", error);
+        console.error(
+          "Signed download URL error:",
+          error
+        );
 
         alert(
           type === "audio"
@@ -173,12 +188,15 @@ export default function DashboardPage() {
         return;
       }
 
-      const separator = data.signedUrl.includes("?") ? "&" : "?";
+      const separator = data.signedUrl.includes("?")
+        ? "&"
+        : "?";
 
       const downloadUrl =
         `${data.signedUrl}${separator}download=${encodeURIComponent(filename)}`;
 
       const link = document.createElement("a");
+
       link.href = downloadUrl;
       link.download = filename;
       link.target = "_blank";
@@ -222,14 +240,22 @@ export default function DashboardPage() {
 
       // ROLE CHECK
       try {
-        const roleResponse = await fetch("/api/auth/role", {
-          cache: "no-store",
-        });
+        const roleResponse = await fetch(
+          "/api/auth/role",
+          {
+            cache: "no-store",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          }
+        );
 
         if (roleResponse.ok) {
           const roleData = await roleResponse.json();
 
-          const role = String(roleData?.role || "").toLowerCase();
+          const role = String(
+            roleData?.role || ""
+          ).toLowerCase();
 
           if (role === "customer") {
             router.replace("/customer-dashboard");
@@ -246,7 +272,10 @@ export default function DashboardPage() {
           }
         }
       } catch (roleError) {
-        console.error("Role check error:", roleError);
+        console.error(
+          "Role check error:",
+          roleError
+        );
       }
 
       // TOTAL SONGS
@@ -314,7 +343,10 @@ export default function DashboardPage() {
           head: true,
         });
 
+      // =====================================================
       // LATEST SONGS
+      // =====================================================
+
       const {
         data: latestSongs,
         error: latestSongsError,
@@ -325,6 +357,12 @@ export default function DashboardPage() {
           song_title,
           artist_name,
           album_name,
+          singer_name,
+          composer,
+          lyricist,
+          genre,
+          language,
+          release_date,
           cover_url,
           audio_url,
           status,
@@ -336,10 +374,16 @@ export default function DashboardPage() {
         .limit(5);
 
       if (latestSongsError) {
-        console.error("Latest songs error:", latestSongsError);
+        console.error(
+          "Latest songs error:",
+          latestSongsError
+        );
       }
 
+      // =====================================================
       // CUSTOMER SONG MAPPING
+      // =====================================================
+
       const songIds = (latestSongs || []).map(
         (song: any) => song.id
       );
@@ -356,13 +400,19 @@ export default function DashboardPage() {
           .in("song_id", songIds);
 
         if (error) {
-          console.error("Customer songs error:", error);
+          console.error(
+            "Customer songs error:",
+            error
+          );
         }
 
         customerSongRows = data || [];
       }
 
+      // =====================================================
       // CUSTOMER IDS
+      // =====================================================
+
       const customerIds = customerSongRows
         .map((item) => item.customer_id)
         .filter(Boolean);
@@ -375,51 +425,110 @@ export default function DashboardPage() {
           .select(`
             id,
             name,
+            customer_name,
             label_name
           `)
           .in("id", customerIds);
 
         if (error) {
-          console.error("Customers fetch error:", error);
+          console.error(
+            "Customers fetch error:",
+            error
+          );
         }
 
         customerRows = data || [];
       }
 
+      // =====================================================
       // MAP SONG DATA
+      // =====================================================
+
       const finalSongs: Song[] = await Promise.all(
-        (latestSongs || []).map(async (song: any) => {
-          const customerSong = customerSongRows.find(
-            (item) => item.song_id === song.id
-          );
+        (latestSongs || []).map(
+          async (song: any) => {
+            const customerSong =
+              customerSongRows.find(
+                (item) =>
+                  item.song_id === song.id
+              );
 
-          const customer = customerRows.find(
-            (item) => item.id === customerSong?.customer_id
-          );
+            const customer =
+              customerRows.find(
+                (item) =>
+                  item.id ===
+                  customerSong?.customer_id
+              );
 
-          const signedCoverUrl = await createSignedUrl(
-            song.cover_url
-          );
+            const signedCoverUrl =
+              await createSignedUrl(
+                song.cover_url
+              );
 
-          const signedAudioUrl = await createSignedUrl(
-            song.audio_url
-          );
+            const signedAudioUrl =
+              await createSignedUrl(
+                song.audio_url
+              );
 
-          return {
-            id: song.id,
-            song_title: song.song_title,
-            artist_name: song.artist_name,
-            album_name: song.album_name,
-            cover_url: song.cover_url,
-            audio_url: song.audio_url,
-            status: song.status,
-            rejection_reason: song.rejection_reason,
-            customer_name: customer?.name || null,
-            label_name: customer?.label_name || null,
-            signed_cover_url: signedCoverUrl,
-            signed_audio_url: signedAudioUrl,
-          };
-        })
+            return {
+              id: song.id,
+
+              song_title:
+                song.song_title,
+
+              artist_name:
+                song.artist_name,
+
+              album_name:
+                song.album_name,
+
+              singer_name:
+                song.singer_name,
+
+              composer:
+                song.composer,
+
+              lyricist:
+                song.lyricist,
+
+              genre:
+                song.genre,
+
+              language:
+                song.language,
+
+              release_date:
+                song.release_date,
+
+              cover_url:
+                song.cover_url,
+
+              audio_url:
+                song.audio_url,
+
+              status:
+                song.status,
+
+              rejection_reason:
+                song.rejection_reason,
+
+              customer_name:
+                customer?.customer_name ||
+                customer?.name ||
+                null,
+
+              label_name:
+                customer?.label_name ||
+                null,
+
+              signed_cover_url:
+                signedCoverUrl,
+
+              signed_audio_url:
+                signedAudioUrl,
+            };
+          }
+        )
       );
 
       setSongs(finalSongs);
@@ -434,7 +543,10 @@ export default function DashboardPage() {
         customers: customers || 0,
       });
     } catch (error) {
-      console.error("Dashboard loading error:", error);
+      console.error(
+        "Dashboard loading error:",
+        error
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -484,7 +596,9 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error(error);
-      alert("Approve karte waqt error aaya.");
+      alert(
+        "Approve karte waqt error aaya."
+      );
     }
   }
 
@@ -500,7 +614,9 @@ export default function DashboardPage() {
     if (reason === null) return;
 
     if (!reason.trim()) {
-      alert("Rejection reason likhna zaroori hai.");
+      alert(
+        "Rejection reason likhna zaroori hai."
+      );
       return;
     }
 
@@ -509,7 +625,8 @@ export default function DashboardPage() {
         .from("songs")
         .update({
           status: "Rejected",
-          rejection_reason: reason.trim(),
+          rejection_reason:
+            reason.trim(),
         })
         .eq("id", songId);
 
@@ -528,7 +645,9 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error(error);
-      alert("Reject karte waqt error aaya.");
+      alert(
+        "Reject karte waqt error aaya."
+      );
     }
   }
 
@@ -555,7 +674,9 @@ export default function DashboardPage() {
         return;
       }
 
-      alert("Song deleted successfully ✅");
+      alert(
+        "Song deleted successfully ✅"
+      );
 
       if (selectedSong?.id === songId) {
         setSelectedSong(null);
@@ -564,7 +685,9 @@ export default function DashboardPage() {
       await loadDashboard();
     } catch (error) {
       console.error(error);
-      alert("Delete karte waqt error aaya.");
+      alert(
+        "Delete karte waqt error aaya."
+      );
     }
   }
 
@@ -581,8 +704,12 @@ export default function DashboardPage() {
   // STATUS BADGE
   // =========================================================
 
-  function getStatusClass(status: string | null) {
-    const value = String(status || "").toLowerCase();
+  function getStatusClass(
+    status: string | null
+  ) {
+    const value = String(
+      status || ""
+    ).toLowerCase();
 
     if (value === "approved") {
       return "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
@@ -593,6 +720,32 @@ export default function DashboardPage() {
     }
 
     return "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20";
+  }
+
+  // =========================================================
+  // RELEASE DATE FORMAT
+  // =========================================================
+
+  function formatReleaseDate(
+    date: string | null
+  ) {
+    if (!date) return "—";
+
+    try {
+      const formatted =
+        new Date(date).toLocaleDateString(
+          "en-IN",
+          {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          }
+        );
+
+      return formatted;
+    } catch {
+      return date;
+    }
   }
 
   // =========================================================
@@ -621,9 +774,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[#09090b] text-white">
       <div className="flex min-h-screen">
 
-        {/* =====================================================
-            SIDEBAR
-        ====================================================== */}
+        {/* SIDEBAR */}
 
         <aside className="hidden lg:flex w-[260px] shrink-0 border-r border-white/10 bg-[#0d0d10] flex-col">
 
@@ -653,8 +804,6 @@ export default function DashboardPage() {
 
           <nav className="p-4 space-y-2 flex-1">
 
-            {/* DASHBOARD */}
-
             <button
               type="button"
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/10 text-white text-sm font-medium"
@@ -663,45 +812,45 @@ export default function DashboardPage() {
               Dashboard
             </button>
 
-            {/* ALL SONGS */}
-
             <button
               type="button"
-              onClick={() => router.push("/songs")}
+              onClick={() =>
+                router.push("/songs")
+              }
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>🎵</span>
               All Songs
             </button>
 
-            {/* UPLOAD SONG */}
-
             <button
               type="button"
-              onClick={() => router.push("/upload")}
+              onClick={() =>
+                router.push("/upload")
+              }
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>⬆️</span>
               Upload Song
             </button>
 
-            {/* CUSTOMERS */}
-
             <button
               type="button"
-              onClick={() => router.push("/customers")}
+              onClick={() =>
+                router.push("/customers")
+              }
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>👥</span>
               Customers
             </button>
 
-            {/* COPYRIGHT REQUESTS */}
-
             <button
               type="button"
               onClick={() =>
-                router.push("/dashboard/copyright-requests")
+                router.push(
+                  "/dashboard/copyright-requests"
+                )
               }
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
@@ -709,12 +858,12 @@ export default function DashboardPage() {
               Copyright Requests
             </button>
 
-            {/* CUSTOMER DASHBOARD */}
-
             <button
               type="button"
               onClick={() =>
-                router.push("/customer-dashboard")
+                router.push(
+                  "/customer-dashboard"
+                )
               }
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
@@ -725,7 +874,6 @@ export default function DashboardPage() {
           </nav>
 
           <div className="p-4 border-t border-white/10">
-
             <button
               type="button"
               onClick={logout}
@@ -733,13 +881,11 @@ export default function DashboardPage() {
             >
               🚪 Logout
             </button>
-
           </div>
+
         </aside>
 
-        {/* =====================================================
-            MAIN
-        ====================================================== */}
+        {/* MAIN */}
 
         <main className="flex-1 min-w-0">
 
@@ -765,7 +911,9 @@ export default function DashboardPage() {
 
                   <button
                     type="button"
-                    onClick={() => loadDashboard(true)}
+                    onClick={() =>
+                      loadDashboard(true)
+                    }
                     disabled={refreshing}
                     className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm disabled:opacity-50"
                   >
@@ -792,21 +940,15 @@ export default function DashboardPage() {
 
           <div className="p-4 sm:p-6 lg:p-8">
 
-            {/* =================================================
-                STAT CARDS
-            ================================================== */}
+            {/* STAT CARDS */}
 
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
 
-              {/* TOTAL */}
-
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-sm text-white/50">
                     Total Songs
                   </span>
-
                   <span className="text-xl">
                     🎵
                   </span>
@@ -815,18 +957,13 @@ export default function DashboardPage() {
                 <p className="text-3xl font-bold">
                   {stats.totalSongs}
                 </p>
-
               </div>
 
-              {/* PENDING */}
-
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-sm text-white/50">
                     Pending
                   </span>
-
                   <span className="text-xl">
                     ⏳
                   </span>
@@ -835,18 +972,13 @@ export default function DashboardPage() {
                 <p className="text-3xl font-bold text-yellow-400">
                   {stats.pending}
                 </p>
-
               </div>
 
-              {/* APPROVED */}
-
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-sm text-white/50">
                     Approved
                   </span>
-
                   <span className="text-xl">
                     ✅
                   </span>
@@ -855,18 +987,13 @@ export default function DashboardPage() {
                 <p className="text-3xl font-bold text-emerald-400">
                   {stats.approved}
                 </p>
-
               </div>
 
-              {/* REJECTED */}
-
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-sm text-white/50">
                     Rejected
                   </span>
-
                   <span className="text-xl">
                     ❌
                   </span>
@@ -875,14 +1002,11 @@ export default function DashboardPage() {
                 <p className="text-3xl font-bold text-red-400">
                   {stats.rejected}
                 </p>
-
               </div>
 
             </div>
 
-            {/* =================================================
-                SECONDARY STATS
-            ================================================== */}
+            {/* SECONDARY STATS */}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
 
@@ -928,9 +1052,7 @@ export default function DashboardPage() {
 
             </div>
 
-            {/* =================================================
-                RECENT SONGS
-            ================================================== */}
+            {/* RECENT SONGS */}
 
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
 
@@ -957,9 +1079,7 @@ export default function DashboardPage() {
               </div>
 
               {songs.length === 0 ? (
-
                 <div className="p-10 text-center">
-
                   <div className="text-4xl mb-3">
                     🎵
                   </div>
@@ -967,17 +1087,13 @@ export default function DashboardPage() {
                   <p className="text-white/50">
                     Abhi koi song available nahi hai.
                   </p>
-
                 </div>
-
               ) : (
-
                 <div className="overflow-x-auto">
 
                   <table className="w-full min-w-[1100px]">
 
                     <thead>
-
                       <tr className="border-b border-white/10 text-left">
 
                         <th className="px-5 py-4 text-xs font-medium text-white/40">
@@ -1017,7 +1133,6 @@ export default function DashboardPage() {
                         </th>
 
                       </tr>
-
                     </thead>
 
                     <tbody>
@@ -1036,19 +1151,18 @@ export default function DashboardPage() {
                             <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/5 border border-white/10">
 
                               {song.signed_cover_url ? (
-
                                 <img
                                   src={song.signed_cover_url}
-                                  alt={song.song_title || "Song"}
+                                  alt={
+                                    song.song_title ||
+                                    "Song"
+                                  }
                                   className="w-full h-full object-cover"
                                 />
-
                               ) : (
-
                                 <div className="w-full h-full flex items-center justify-center text-xl">
                                   🎵
                                 </div>
-
                               )}
 
                             </div>
@@ -1062,11 +1176,13 @@ export default function DashboardPage() {
                             <div className="max-w-[220px]">
 
                               <p className="font-semibold truncate">
-                                {song.song_title || "Untitled Song"}
+                                {song.song_title ||
+                                  "Untitled Song"}
                               </p>
 
                               <p className="text-xs text-white/40 truncate mt-1">
-                                {song.album_name || "No Album"}
+                                {song.album_name ||
+                                  "No Album"}
                               </p>
 
                             </div>
@@ -1078,7 +1194,8 @@ export default function DashboardPage() {
                           <td className="px-5 py-4">
 
                             <p className="text-sm text-white/70">
-                              {song.artist_name || "Unknown Artist"}
+                              {song.artist_name ||
+                                "Unknown Artist"}
                             </p>
 
                           </td>
@@ -1092,7 +1209,8 @@ export default function DashboardPage() {
                                 song.status
                               )}`}
                             >
-                              {song.status || "Pending"}
+                              {song.status ||
+                                "Pending"}
                             </span>
 
                           </td>
@@ -1102,17 +1220,13 @@ export default function DashboardPage() {
                           <td className="px-5 py-4">
 
                             {song.rejection_reason ? (
-
                               <p className="max-w-[220px] text-xs text-red-300/80">
                                 {song.rejection_reason}
                               </p>
-
                             ) : (
-
                               <span className="text-xs text-white/30">
                                 —
                               </span>
-
                             )}
 
                           </td>
@@ -1124,15 +1238,14 @@ export default function DashboardPage() {
                             <div>
 
                               <p className="text-sm">
-                                {song.customer_name || "—"}
+                                {song.customer_name ||
+                                  "—"}
                               </p>
 
                               {song.label_name && (
-
                                 <p className="text-xs text-white/40 mt-1">
                                   {song.label_name}
                                 </p>
-
                               )}
 
                             </div>
@@ -1144,20 +1257,18 @@ export default function DashboardPage() {
                           <td className="px-5 py-4">
 
                             {song.signed_audio_url ? (
-
                               <audio
                                 controls
                                 preload="none"
                                 className="w-[230px] h-9"
-                                src={song.signed_audio_url}
+                                src={
+                                  song.signed_audio_url
+                                }
                               />
-
                             ) : (
-
                               <span className="text-xs text-white/30">
                                 Audio unavailable
                               </span>
-
                             )}
 
                           </td>
@@ -1171,7 +1282,9 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  approveSong(song.id)
+                                  approveSong(
+                                    song.id
+                                  )
                                 }
                                 className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-xs font-medium"
                               >
@@ -1181,7 +1294,9 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  rejectSong(song.id)
+                                  rejectSong(
+                                    song.id
+                                  )
                                 }
                                 className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
                               >
@@ -1201,7 +1316,9 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  setSelectedSong(song)
+                                  setSelectedSong(
+                                    song
+                                  )
                                 }
                                 className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 transition text-xs font-medium"
                               >
@@ -1211,7 +1328,9 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  deleteSong(song.id)
+                                  deleteSong(
+                                    song.id
+                                  )
                                 }
                                 className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
                               >
@@ -1231,7 +1350,6 @@ export default function DashboardPage() {
                   </table>
 
                 </div>
-
               )}
 
             </div>
@@ -1250,12 +1368,16 @@ export default function DashboardPage() {
 
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setSelectedSong(null)}
+          onClick={() =>
+            setSelectedSong(null)
+          }
         >
 
           <div
-            className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#111114] shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#111114] shadow-2xl"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
 
             {/* MODAL HEADER */}
@@ -1269,14 +1391,16 @@ export default function DashboardPage() {
                 </h2>
 
                 <p className="text-xs text-white/40 mt-1">
-                  Song information & files
+                  Complete song information & files
                 </p>
 
               </div>
 
               <button
                 type="button"
-                onClick={() => setSelectedSong(null)}
+                onClick={() =>
+                  setSelectedSong(null)
+                }
                 className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition"
               >
                 ✕
@@ -1297,19 +1421,20 @@ export default function DashboardPage() {
                   <div className="aspect-square rounded-2xl overflow-hidden bg-white/5 border border-white/10">
 
                     {selectedSong.signed_cover_url ? (
-
                       <img
-                        src={selectedSong.signed_cover_url}
-                        alt={selectedSong.song_title || "Song Poster"}
+                        src={
+                          selectedSong.signed_cover_url
+                        }
+                        alt={
+                          selectedSong.song_title ||
+                          "Song Poster"
+                        }
                         className="w-full h-full object-cover"
                       />
-
                     ) : (
-
                       <div className="w-full h-full flex items-center justify-center text-5xl">
                         🎵
                       </div>
-
                     )}
 
                   </div>
@@ -1318,17 +1443,21 @@ export default function DashboardPage() {
 
                   <button
                     type="button"
-                    disabled={downloadLoading === "cover"}
+                    disabled={
+                      downloadLoading === "cover"
+                    }
                     onClick={() => {
 
-                      const ext = getFileExtension(
-                        selectedSong.cover_url,
-                        ".jpg"
-                      );
+                      const ext =
+                        getFileExtension(
+                          selectedSong.cover_url,
+                          ".jpg"
+                        );
 
-                      const name = safeFileName(
-                        selectedSong.song_title
-                      );
+                      const name =
+                        safeFileName(
+                          selectedSong.song_title
+                        );
 
                       downloadFile(
                         selectedSong.cover_url,
@@ -1339,11 +1468,9 @@ export default function DashboardPage() {
                     }}
                     className="w-full mt-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm font-medium disabled:opacity-50"
                   >
-
                     {downloadLoading === "cover"
                       ? "Downloading..."
                       : "⬇️ Download Poster"}
-
                   </button>
 
                 </div>
@@ -1359,10 +1486,13 @@ export default function DashboardPage() {
                         selectedSong.status
                       )}`}
                     >
-                      {selectedSong.status || "Pending"}
+                      {selectedSong.status ||
+                        "Pending"}
                     </span>
 
                   </div>
+
+                  {/* BASIC DETAILS */}
 
                   <div className="space-y-4">
 
@@ -1373,7 +1503,8 @@ export default function DashboardPage() {
                       </p>
 
                       <p className="font-semibold text-lg">
-                        {selectedSong.song_title || "Untitled Song"}
+                        {selectedSong.song_title ||
+                          "Untitled Song"}
                       </p>
 
                     </div>
@@ -1381,51 +1512,114 @@ export default function DashboardPage() {
                     <div className="grid sm:grid-cols-2 gap-4">
 
                       <div>
-
                         <p className="text-xs text-white/40 mb-1">
                           Artist
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.artist_name || "—"}
+                          {selectedSong.artist_name ||
+                            "—"}
                         </p>
-
                       </div>
 
                       <div>
-
                         <p className="text-xs text-white/40 mb-1">
                           Album
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.album_name || "—"}
+                          {selectedSong.album_name ||
+                            "—"}
                         </p>
-
                       </div>
 
                       <div>
+                        <p className="text-xs text-white/40 mb-1">
+                          Singer
+                        </p>
 
+                        <p className="text-sm">
+                          {selectedSong.singer_name ||
+                            "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/40 mb-1">
+                          Composer
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.composer ||
+                            "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/40 mb-1">
+                          Lyricist
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.lyricist ||
+                            "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/40 mb-1">
+                          Genre
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.genre ||
+                            "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/40 mb-1">
+                          Language
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.language ||
+                            "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/40 mb-1">
+                          Release Date
+                        </p>
+
+                        <p className="text-sm">
+                          {formatReleaseDate(
+                            selectedSong.release_date
+                          )}
+                        </p>
+                      </div>
+
+                      <div>
                         <p className="text-xs text-white/40 mb-1">
                           Customer
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.customer_name || "—"}
+                          {selectedSong.customer_name ||
+                            "—"}
                         </p>
-
                       </div>
 
                       <div>
-
                         <p className="text-xs text-white/40 mb-1">
                           Label
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.label_name || "—"}
+                          {selectedSong.label_name ||
+                            "—"}
                         </p>
-
                       </div>
 
                     </div>
@@ -1441,13 +1635,176 @@ export default function DashboardPage() {
                         </p>
 
                         <p className="text-sm text-red-300">
-                          {selectedSong.rejection_reason}
+                          {
+                            selectedSong.rejection_reason
+                          }
                         </p>
 
                       </div>
 
                     )}
 
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* COMPLETE MUSIC INFORMATION */}
+
+              <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
+                <div className="flex items-center justify-between gap-4 mb-5">
+
+                  <div>
+                    <h3 className="font-semibold">
+                      Music Information
+                    </h3>
+
+                    <p className="text-xs text-white/40 mt-1">
+                      Complete metadata of this song
+                    </p>
+                  </div>
+
+                  <span className="text-xl">
+                    🎼
+                  </span>
+
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Song Title
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.song_title ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Artist Name
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.artist_name ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Album Name
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.album_name ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Singer Name
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.singer_name ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Composer
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.composer ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Lyricist
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.lyricist ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Genre
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.genre ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Language
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.language ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Release Date
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {formatReleaseDate(
+                        selectedSong.release_date
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Customer
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.customer_name ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Label
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.label_name ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Status
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.status ||
+                        "Pending"}
+                    </p>
                   </div>
 
                 </div>
@@ -1479,36 +1836,38 @@ export default function DashboardPage() {
                 </div>
 
                 {selectedSong.signed_audio_url ? (
-
                   <audio
                     controls
                     className="w-full"
-                    src={selectedSong.signed_audio_url}
+                    src={
+                      selectedSong.signed_audio_url
+                    }
                   />
-
                 ) : (
-
                   <div className="rounded-xl bg-white/5 p-4 text-sm text-white/40">
                     Audio file available nahi hai.
                   </div>
-
                 )}
 
                 {/* DOWNLOAD AUDIO */}
 
                 <button
                   type="button"
-                  disabled={downloadLoading === "audio"}
+                  disabled={
+                    downloadLoading === "audio"
+                  }
                   onClick={() => {
 
-                    const ext = getFileExtension(
-                      selectedSong.audio_url,
-                      ".mp3"
-                    );
+                    const ext =
+                      getFileExtension(
+                        selectedSong.audio_url,
+                        ".mp3"
+                      );
 
-                    const name = safeFileName(
-                      selectedSong.song_title
-                    );
+                    const name =
+                      safeFileName(
+                        selectedSong.song_title
+                      );
 
                     downloadFile(
                       selectedSong.audio_url,
@@ -1519,11 +1878,9 @@ export default function DashboardPage() {
                   }}
                   className="w-full mt-4 px-4 py-3 rounded-xl bg-white text-black hover:bg-white/90 transition text-sm font-semibold disabled:opacity-50"
                 >
-
                   {downloadLoading === "audio"
                     ? "Downloading..."
                     : "⬇️ Download Audio"}
-
                 </button>
 
               </div>
@@ -1535,7 +1892,9 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    approveSong(selectedSong.id)
+                    approveSong(
+                      selectedSong.id
+                    )
                   }
                   className="px-4 py-3 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-sm font-medium"
                 >
@@ -1545,7 +1904,9 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    rejectSong(selectedSong.id)
+                    rejectSong(
+                      selectedSong.id
+                    )
                   }
                   className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-sm font-medium"
                 >
@@ -1555,7 +1916,9 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    deleteSong(selectedSong.id)
+                    deleteSong(
+                      selectedSong.id
+                    )
                   }
                   className="px-4 py-3 rounded-xl bg-red-500/5 text-red-400 hover:bg-red-500/15 transition text-sm font-medium"
                 >
