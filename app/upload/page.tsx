@@ -1,9 +1,17 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+
+type SubLabel = {
+  id: number;
+  customer_id: number;
+  sub_label_name: string;
+  email: string | null;
+  auth_user_id: string | null;
+  is_active: boolean;
+};
 
 export default function UploadPage() {
   const router = useRouter();
@@ -11,6 +19,13 @@ export default function UploadPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  const [customerName, setCustomerName] = useState("");
+  const [labelName, setLabelName] = useState("");
+
+  const [subLabels, setSubLabels] = useState<SubLabel[]>([]);
+  const [selectedSubLabelId, setSelectedSubLabelId] =
+    useState("");
 
   const [songTitle, setSongTitle] = useState("");
   const [artistName, setArtistName] = useState("");
@@ -54,9 +69,104 @@ export default function UploadPage() {
 
             console.log("Upload Page Role:", roleData);
 
-            role = String(roleData?.role || "").toLowerCase();
+            role = String(
+              roleData?.role || ""
+            ).toLowerCase();
+
+            /*
+              ADMIN
+            */
+            if (
+              role === "admin" ||
+              role === "administrator" ||
+              role === "super_admin"
+            ) {
+              if (mounted) {
+                setIsAdmin(true);
+                setCheckingAuth(false);
+              }
+
+              return;
+            }
+
+            /*
+              CUSTOMER FROM ROLE API
+            */
+            if (
+              role === "customer" &&
+              roleData?.customer
+            ) {
+              const customer =
+                roleData.customer;
+
+              if (mounted) {
+                setIsAdmin(false);
+
+                setCustomerName(
+                  customer.customer_name || ""
+                );
+
+                setLabelName(
+                  customer.label_name || ""
+                );
+              }
+
+              /*
+                CUSTOMER KE SAARE ACTIVE
+                SUB LABELS LOAD KARO
+              */
+
+              const {
+                data: subLabelData,
+                error: subLabelError,
+              } = await supabase
+                .from("sub_labels")
+                .select(
+                  `
+                    id,
+                    customer_id,
+                    sub_label_name,
+                    email,
+                    auth_user_id,
+                    is_active
+                  `
+                )
+                .eq(
+                  "customer_id",
+                  customer.id
+                )
+                .eq(
+                  "is_active",
+                  true
+                )
+                .order(
+                  "created_at",
+                  {
+                    ascending: false,
+                  }
+                );
+
+              if (subLabelError) {
+                console.error(
+                  "Sub Labels Load Error:",
+                  subLabelError
+                );
+              } else if (mounted) {
+                setSubLabels(
+                  subLabelData || []
+                );
+              }
+
+              if (mounted) {
+                setCheckingAuth(false);
+              }
+
+              return;
+            }
           } else {
-            const roleError = await roleResponse.text();
+            const roleError =
+              await roleResponse.text();
+
             console.error(
               "Role API error:",
               roleResponse.status,
@@ -64,41 +174,104 @@ export default function UploadPage() {
             );
           }
         } catch (roleError) {
-          console.error("Role check error:", roleError);
+          console.error(
+            "Role check error:",
+            roleError
+          );
         }
 
         /*
-          Admin roles
+          CUSTOMER FALLBACK CHECK
         */
-        if (
-          role === "admin" ||
-          role === "administrator" ||
-          role === "super_admin"
-        ) {
-          if (mounted) {
-            setIsAdmin(true);
-            setCheckingAuth(false);
-          }
 
-          return;
-        }
-
-        /*
-          Customer check
-        */
-        const { data: customer, error } = await supabase
+        const {
+          data: customer,
+          error: customerError,
+        } = await supabase
           .from("customers")
-          .select("id")
-          .eq("auth_user_id", session.user.id)
+          .select(
+            "id, customer_name, label_name"
+          )
+          .eq(
+            "auth_user_id",
+            session.user.id
+          )
           .single();
 
-        if (error || !customer) {
-          console.error("Customer check error:", error);
+        if (
+          customerError ||
+          !customer
+        ) {
+          console.error(
+            "Customer check error:",
+            customerError
+          );
 
-          alert("Customer account नहीं मिला ❌");
+          alert(
+            "Customer account नहीं मिला ❌"
+          );
 
           router.replace("/login");
           return;
+        }
+
+        /*
+          CUSTOMER INFO
+        */
+
+        if (mounted) {
+          setCustomerName(
+            customer.customer_name || ""
+          );
+
+          setLabelName(
+            customer.label_name || ""
+          );
+        }
+
+        /*
+          CUSTOMER KE ACTIVE SUB LABELS
+        */
+
+        const {
+          data: subLabelData,
+          error: subLabelError,
+        } = await supabase
+          .from("sub_labels")
+          .select(
+            `
+              id,
+              customer_id,
+              sub_label_name,
+              email,
+              auth_user_id,
+              is_active
+            `
+          )
+          .eq(
+            "customer_id",
+            customer.id
+          )
+          .eq(
+            "is_active",
+            true
+          )
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            }
+          );
+
+        if (subLabelError) {
+          console.error(
+            "Sub Labels Load Error:",
+            subLabelError
+          );
+        } else if (mounted) {
+          setSubLabels(
+            subLabelData || []
+          );
         }
 
         if (mounted) {
@@ -106,7 +279,10 @@ export default function UploadPage() {
           setCheckingAuth(false);
         }
       } catch (error) {
-        console.error("Auth check error:", error);
+        console.error(
+          "Auth check error:",
+          error
+        );
 
         router.replace("/login");
       }
@@ -116,11 +292,13 @@ export default function UploadPage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.replace("/login");
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!session) {
+          router.replace("/login");
+        }
       }
-    });
+    );
 
     return () => {
       mounted = false;
@@ -128,7 +306,9 @@ export default function UploadPage() {
     };
   }, [router]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(
+    e: React.FormEvent
+  ) {
     e.preventDefault();
 
     if (!songTitle.trim()) {
@@ -141,8 +321,26 @@ export default function UploadPage() {
       return;
     }
 
+    /*
+      CUSTOMER KE LIYE SUB LABEL SELECT
+      KARNA REQUIRED HOGA AGAR SUB LABELS HAIN
+    */
+
+    if (
+      !isAdmin &&
+      subLabels.length > 0 &&
+      !selectedSubLabelId
+    ) {
+      alert(
+        "Please select a Sub Label"
+      );
+      return;
+    }
+
     if (!cover || !audio) {
-      alert("Please select Cover Image and Audio File");
+      alert(
+        "Please select Cover Image and Audio File"
+      );
       return;
     }
 
@@ -165,94 +363,204 @@ export default function UploadPage() {
       } | null = null;
 
       /*
-        Customer ke liye customer account find hoga.
-        Admin ke liye customer ki zarurat nahi hai.
+        CUSTOMER ACCOUNT
       */
-      if (!isAdmin) {
-        const { data: customerData, error: customerError } =
-          await supabase
-            .from("customers")
-            .select("id, customer_name, label_name")
-            .eq("auth_user_id", session.user.id)
-            .single();
 
-        if (customerError || !customerData) {
+      if (!isAdmin) {
+        const {
+          data: customerData,
+          error: customerError,
+        } = await supabase
+          .from("customers")
+          .select(
+            "id, customer_name, label_name"
+          )
+          .eq(
+            "auth_user_id",
+            session.user.id
+          )
+          .single();
+
+        if (
+          customerError ||
+          !customerData
+        ) {
           console.error(
             "Customer fetch error:",
             customerError
           );
 
-          throw new Error("Customer account नहीं मिला");
+          throw new Error(
+            "Customer account नहीं मिला"
+          );
         }
 
         customer = customerData;
+
+        /*
+          SELECTED SUB LABEL KI SECURITY CHECK
+          CUSTOMER SIRF APNA SUB LABEL USE KAR SAKE
+        */
+
+        if (selectedSubLabelId) {
+          const {
+            data: selectedSubLabel,
+            error:
+              selectedSubLabelError,
+          } = await supabase
+            .from("sub_labels")
+            .select(
+              "id, customer_id, sub_label_name, is_active"
+            )
+            .eq(
+              "id",
+              Number(selectedSubLabelId)
+            )
+            .eq(
+              "customer_id",
+              customer.id
+            )
+            .eq(
+              "is_active",
+              true
+            )
+            .maybeSingle();
+
+          if (
+            selectedSubLabelError ||
+            !selectedSubLabel
+          ) {
+            console.error(
+              "Selected Sub Label Error:",
+              selectedSubLabelError
+            );
+
+            throw new Error(
+              "Selected Sub Label valid नहीं है"
+            );
+          }
+        }
       }
 
       const timestamp = Date.now();
 
-      const coverName = `${timestamp}-${cover.name}`;
-      const audioName = `${timestamp}-${audio.name}`;
+      const coverName =
+        `${timestamp}-${cover.name}`;
 
-      const coverPath = `covers/${coverName}`;
-      const audioPath = `audio/${audioName}`;
+      const audioName =
+        `${timestamp}-${audio.name}`;
+
+      const coverPath =
+        `covers/${coverName}`;
+
+      const audioPath =
+        `audio/${audioName}`;
 
       /*
-        Upload Cover
+        UPLOAD COVER
       */
-      const { error: coverError } = await supabase.storage
+
+      const {
+        error: coverError,
+      } = await supabase.storage
         .from("songs")
-        .upload(coverPath, cover);
+        .upload(
+          coverPath,
+          cover
+        );
 
       if (coverError) {
-        console.error("Cover upload error:", coverError);
+        console.error(
+          "Cover upload error:",
+          coverError
+        );
+
         throw coverError;
       }
 
       /*
-        Upload Audio
+        UPLOAD AUDIO
       */
-      const { error: audioError } = await supabase.storage
+
+      const {
+        error: audioError,
+      } = await supabase.storage
         .from("songs")
-        .upload(audioPath, audio);
+        .upload(
+          audioPath,
+          audio
+        );
 
       if (audioError) {
-        console.error("Audio upload error:", audioError);
+        console.error(
+          "Audio upload error:",
+          audioError
+        );
 
         await supabase.storage
           .from("songs")
-          .remove([coverPath]);
+          .remove([
+            coverPath,
+          ]);
 
         throw audioError;
       }
 
       /*
-        Create Song
+        CREATE SONG
       */
-      const { data: newSong, error: databaseError } =
-        await supabase
-          .from("songs")
-          .insert([
-            {
-              song_title: songTitle.trim(),
-              artist_name: artistName.trim(),
-              album_name: albumName.trim(),
-              singer_name: singerName.trim(),
-              composer: composer.trim(),
-              lyricist: lyricist.trim(),
-              genre: genre.trim(),
-              language: language.trim(),
-              release_date: releaseDate || null,
 
-              cover_url: coverPath,
-              audio_url: audioPath,
+      const {
+        data: newSong,
+        error: databaseError,
+      } = await supabase
+        .from("songs")
+        .insert([
+          {
+            song_title:
+              songTitle.trim(),
 
-              status: "Pending",
-            },
-          ])
-          .select("id")
-          .single();
+            artist_name:
+              artistName.trim(),
 
-      if (databaseError || !newSong) {
+            album_name:
+              albumName.trim(),
+
+            singer_name:
+              singerName.trim(),
+
+            composer:
+              composer.trim(),
+
+            lyricist:
+              lyricist.trim(),
+
+            genre:
+              genre.trim(),
+
+            language:
+              language.trim(),
+
+            release_date:
+              releaseDate || null,
+
+            cover_url:
+              coverPath,
+
+            audio_url:
+              audioPath,
+
+            status:
+              "Pending",
+          },
+        ])
+        .select("id")
+        .single();
+
+      if (
+        databaseError ||
+        !newSong
+      ) {
         console.error(
           "Song database error:",
           databaseError
@@ -260,25 +568,41 @@ export default function UploadPage() {
 
         await supabase.storage
           .from("songs")
-          .remove([coverPath, audioPath]);
+          .remove([
+            coverPath,
+            audioPath,
+          ]);
 
-        throw databaseError || new Error("Song create failed");
+        throw (
+          databaseError ||
+          new Error(
+            "Song create failed"
+          )
+        );
       }
 
       /*
-        Customer ke song ko customer_songs se link karo.
-        Admin upload mein customer link nahi hoga.
+        CUSTOMER SONG LINK
       */
-      if (!isAdmin && customer) {
-        const { error: customerSongError } =
-          await supabase
-            .from("customer_songs")
-            .insert([
-              {
-                customer_id: customer.id,
-                song_id: newSong.id,
-              },
-            ]);
+
+      if (
+        !isAdmin &&
+        customer
+      ) {
+        const {
+          error:
+            customerSongError,
+        } = await supabase
+          .from("customer_songs")
+          .insert([
+            {
+              customer_id:
+                customer.id,
+
+              song_id:
+                newSong.id,
+            },
+          ]);
 
         if (customerSongError) {
           console.error(
@@ -289,36 +613,136 @@ export default function UploadPage() {
           await supabase
             .from("songs")
             .delete()
-            .eq("id", newSong.id);
+            .eq(
+              "id",
+              newSong.id
+            );
 
           await supabase.storage
             .from("songs")
-            .remove([coverPath, audioPath]);
+            .remove([
+              coverPath,
+              audioPath,
+            ]);
 
           throw customerSongError;
+        }
+
+        /*
+          SUB LABEL SONG LINK
+        */
+
+        if (selectedSubLabelId) {
+          const {
+            error:
+              subLabelSongError,
+          } = await supabase
+            .from("sub_label_songs")
+            .insert([
+              {
+                sub_label_id:
+                  Number(
+                    selectedSubLabelId
+                  ),
+
+                song_id:
+                  newSong.id,
+              },
+            ]);
+
+          if (
+            subLabelSongError
+          ) {
+            console.error(
+              "Sub Label song linking error:",
+              subLabelSongError
+            );
+
+            /*
+              CUSTOMER LINK DELETE
+            */
+
+            await supabase
+              .from("customer_songs")
+              .delete()
+              .eq(
+                "song_id",
+                newSong.id
+              )
+              .eq(
+                "customer_id",
+                customer.id
+              );
+
+            /*
+              SONG DELETE
+            */
+
+            await supabase
+              .from("songs")
+              .delete()
+              .eq(
+                "id",
+                newSong.id
+              );
+
+            /*
+              FILE DELETE
+            */
+
+            await supabase.storage
+              .from("songs")
+              .remove([
+                coverPath,
+                audioPath,
+              ]);
+
+            throw subLabelSongError;
+          }
         }
       }
 
       /*
-        Success
+        SUCCESS
       */
-      if (isAdmin) {
-        alert("Song Uploaded Successfully ✅");
 
-        router.push("/dashboard");
+      if (isAdmin) {
+        alert(
+          "Song Uploaded Successfully ✅"
+        );
+
+        router.push(
+          "/dashboard"
+        );
       } else {
+        const selectedName =
+          subLabels.find(
+            (item) =>
+              item.id ===
+              Number(
+                selectedSubLabelId
+              )
+          )?.sub_label_name;
+
         alert(
           `Song Uploaded Successfully ✅\n\nCustomer: ${
-            customer?.customer_name || ""
+            customer?.customer_name ||
+            ""
+          }\nSub Label: ${
+            selectedName ||
+            "Main Customer Label"
           }`
         );
 
-        router.push("/customer-dashboard");
+        router.push(
+          "/customer-dashboard"
+        );
       }
 
       /*
-        Form reset
+        FORM RESET
       */
+
       setSongTitle("");
       setArtistName("");
       setAlbumName("");
@@ -330,16 +754,23 @@ export default function UploadPage() {
       setReleaseDate("");
       setCover(null);
       setAudio(null);
+      setSelectedSubLabelId("");
 
-      const fileInputs = document.querySelectorAll(
-        'input[type="file"]'
-      ) as NodeListOf<HTMLInputElement>;
+      const fileInputs =
+        document.querySelectorAll(
+          'input[type="file"]'
+        ) as NodeListOf<HTMLInputElement>;
 
-      fileInputs.forEach((input) => {
-        input.value = "";
-      });
+      fileInputs.forEach(
+        (input) => {
+          input.value = "";
+        }
+      );
     } catch (error: any) {
-      console.error("Upload error:", error);
+      console.error(
+        "Upload error:",
+        error
+      );
 
       alert(
         error?.message
@@ -359,7 +790,8 @@ export default function UploadPage() {
           background: "#111827",
           color: "white",
           display: "flex",
-          justifyContent: "center",
+          justifyContent:
+            "center",
           alignItems: "center",
           fontSize: "22px",
         }}
@@ -387,7 +819,8 @@ export default function UploadPage() {
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "center",
             marginBottom: "30px",
           }}
@@ -434,11 +867,147 @@ export default function UploadPage() {
             borderRadius: "14px",
           }}
         >
+          {/* CUSTOMER INFO */}
+
+          {!isAdmin && (
+            <div
+              style={{
+                background: "#0f172a",
+                border:
+                  "1px solid #334155",
+                borderRadius: "10px",
+                padding: "15px",
+                marginBottom: "5px",
+              }}
+            >
+              <div
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "11px",
+                  marginBottom: "5px",
+                }}
+              >
+                UPLOADING FOR
+              </div>
+
+              <div
+                style={{
+                  color: "#fff",
+                  fontWeight: "700",
+                  fontSize: "15px",
+                }}
+              >
+                {customerName ||
+                  "Customer"}
+              </div>
+
+              <div
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "12px",
+                  marginTop: "5px",
+                }}
+              >
+                Label:{" "}
+                {labelName ||
+                  "Label Name Not Set"}
+              </div>
+            </div>
+          )}
+
+          {/* SUB LABEL */}
+
+          {!isAdmin &&
+            subLabels.length > 0 && (
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    color: "#cbd5e1",
+                    fontSize: "14px",
+                    marginBottom: "7px",
+                    fontWeight: "600",
+                  }}
+                >
+                  Select Sub Label
+                </label>
+
+                <select
+                  value={
+                    selectedSubLabelId
+                  }
+                  onChange={(e) =>
+                    setSelectedSubLabelId(
+                      e.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    boxSizing:
+                      "border-box",
+                    background: "#0f172a",
+                    color: "#fff",
+                    border:
+                      "1px solid #334155",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    outline: "none",
+                    fontSize: "14px",
+                  }}
+                >
+                  <option value="">
+                    -- Select Sub Label --
+                  </option>
+
+                  {subLabels.map(
+                    (subLabel) => (
+                      <option
+                        key={
+                          subLabel.id
+                        }
+                        value={
+                          subLabel.id
+                        }
+                      >
+                        {
+                          subLabel.sub_label_name
+                        }
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+            )}
+
+          {!isAdmin &&
+            subLabels.length === 0 && (
+              <div
+                style={{
+                  background:
+                    "rgba(59,130,246,0.10)",
+                  border:
+                    "1px solid rgba(59,130,246,0.30)",
+                  color: "#bfdbfe",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                }}
+              >
+                ℹ️ Is customer ke liye
+                abhi koi active Sub Label
+                available nahi hai. Song
+                main customer label ke naam
+                par upload hoga.
+              </div>
+            )}
+
           <input
             placeholder="Song Title"
             value={songTitle}
             onChange={(e) =>
-              setSongTitle(e.target.value)
+              setSongTitle(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -447,7 +1016,9 @@ export default function UploadPage() {
             placeholder="Artist Name"
             value={artistName}
             onChange={(e) =>
-              setArtistName(e.target.value)
+              setArtistName(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -456,7 +1027,9 @@ export default function UploadPage() {
             placeholder="Album Name"
             value={albumName}
             onChange={(e) =>
-              setAlbumName(e.target.value)
+              setAlbumName(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -465,7 +1038,9 @@ export default function UploadPage() {
             placeholder="Singer Name"
             value={singerName}
             onChange={(e) =>
-              setSingerName(e.target.value)
+              setSingerName(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -474,7 +1049,9 @@ export default function UploadPage() {
             placeholder="Composer"
             value={composer}
             onChange={(e) =>
-              setComposer(e.target.value)
+              setComposer(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -483,7 +1060,9 @@ export default function UploadPage() {
             placeholder="Lyricist"
             value={lyricist}
             onChange={(e) =>
-              setLyricist(e.target.value)
+              setLyricist(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -492,7 +1071,9 @@ export default function UploadPage() {
             placeholder="Genre"
             value={genre}
             onChange={(e) =>
-              setGenre(e.target.value)
+              setGenre(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -501,7 +1082,9 @@ export default function UploadPage() {
             placeholder="Language"
             value={language}
             onChange={(e) =>
-              setLanguage(e.target.value)
+              setLanguage(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -519,7 +1102,9 @@ export default function UploadPage() {
             type="date"
             value={releaseDate}
             onChange={(e) =>
-              setReleaseDate(e.target.value)
+              setReleaseDate(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -538,7 +1123,8 @@ export default function UploadPage() {
             accept="image/*"
             onChange={(e) =>
               setCover(
-                e.target.files?.[0] || null
+                e.target.files?.[0] ||
+                  null
               )
             }
             style={fileInputStyle}
@@ -558,7 +1144,8 @@ export default function UploadPage() {
             accept="audio/*"
             onChange={(e) =>
               setAudio(
-                e.target.files?.[0] || null
+                e.target.files?.[0] ||
+                  null
               )
             }
             style={fileInputStyle}
