@@ -480,6 +480,7 @@ export default function UploadPage() {
 
       /*
         UPLOAD AUDIO
+        WAV + MP3 SUPPORT
       */
 
       const {
@@ -488,7 +489,12 @@ export default function UploadPage() {
         .from("songs")
         .upload(
           audioPath,
-          audio
+          audio,
+          {
+            contentType:
+              audio.type || "audio/wav",
+            upsert: false,
+          }
         );
 
       if (audioError) {
@@ -1141,7 +1147,7 @@ export default function UploadPage() {
 
           <input
             type="file"
-            accept="audio/*"
+            accept="audio/*,.wav,.mp3"
             onChange={(e) =>
               setAudio(
                 e.target.files?.[0] ||
