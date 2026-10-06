@@ -33,6 +33,10 @@ type Song = {
   created_at?: string | null;
   cover_signed_url?: string | null;
   audio_signed_url?: string | null;
+
+  // NEW
+  source_label?: string | null;
+  label_type?: string | null;
 };
 
 type SubLabel = {
@@ -49,8 +53,6 @@ type LoginDetails = {
   email: string;
   password: string;
 };
-
-
 
 function StatCard({
   icon,
@@ -135,9 +137,7 @@ export default function CustomerDashboard() {
         error: customerError,
       } = await supabase
         .from("customers")
-        .select(
-          "id, customer_name, label_name"
-        )
+        .select("id, customer_name, label_name")
         .eq("auth_user_id", session.user.id)
         .maybeSingle();
 
@@ -153,10 +153,7 @@ export default function CustomerDashboard() {
       }
 
       if (!customerData) {
-        alert(
-          "Customer account नहीं मिला ❌"
-        );
-
+        alert("Customer account नहीं मिला ❌");
         return;
       }
 
@@ -172,10 +169,7 @@ export default function CustomerDashboard() {
       } = await supabase
         .from("customer_songs")
         .select("song_id")
-        .eq(
-          "customer_id",
-          customerData.id
-        );
+        .eq("customer_id", customerData.id);
 
       if (relationError) {
         console.error(relationError);
@@ -192,6 +186,90 @@ export default function CustomerDashboard() {
         relationData?.map(
           (item: any) => item.song_id
         ) || [];
+
+      /* =====================================================
+         SUB LABEL SONG RELATIONS
+      ===================================================== */
+
+      let subLabelSongRows: {
+        song_id: number;
+        sub_label_id: number;
+      }[] = [];
+
+      let subLabelRowsForSongs: {
+        id: number;
+        sub_label_name: string;
+        customer_id: number;
+      }[] = [];
+
+      if (songIds.length > 0) {
+        const {
+          data: subLabelSongData,
+          error: subLabelSongError,
+        } = await supabase
+          .from("sub_label_songs")
+          .select("song_id, sub_label_id")
+          .in("song_id", songIds);
+
+        if (subLabelSongError) {
+          console.error(
+            "Sub Label Song relation error:",
+            subLabelSongError
+          );
+        } else {
+          subLabelSongRows =
+            (subLabelSongData || []) as {
+              song_id: number;
+              sub_label_id: number;
+            }[];
+        }
+
+        const subLabelIds = [
+          ...new Set(
+            subLabelSongRows
+              .map(
+                (row) =>
+                  row.sub_label_id
+              )
+              .filter(Boolean)
+          ),
+        ];
+
+        if (subLabelIds.length > 0) {
+          const {
+            data: subLabelDataForSongs,
+            error: subLabelErrorForSongs,
+          } = await supabase
+            .from("sub_labels")
+            .select(
+              "id, sub_label_name, customer_id"
+            )
+            .in("id", subLabelIds)
+            .eq(
+              "customer_id",
+              customerData.id
+            );
+
+          if (subLabelErrorForSongs) {
+            console.error(
+              "Sub Label loading error:",
+              subLabelErrorForSongs
+            );
+          } else {
+            subLabelRowsForSongs =
+              (subLabelDataForSongs ||
+                []) as {
+                id: number;
+                sub_label_name: string;
+                customer_id: number;
+              }[];
+          }
+        }
+      }
+
+      /* =====================================================
+         SONGS
+      ===================================================== */
 
       if (songIds.length > 0) {
         const {
@@ -235,8 +313,7 @@ export default function CustomerDashboard() {
         const songsWithUrls: Song[] = [];
 
         for (
-          const song of (songData ||
-            []) as Song[]
+          const song of (songData || []) as Song[]
         ) {
           let coverSignedUrl:
             | string
@@ -250,9 +327,7 @@ export default function CustomerDashboard() {
 
           if (song.cover_url) {
             if (
-              song.cover_url.startsWith(
-                "http"
-              )
+              song.cover_url.startsWith("http")
             ) {
               coverSignedUrl =
                 song.cover_url;
@@ -274,9 +349,7 @@ export default function CustomerDashboard() {
 
           if (song.audio_url) {
             if (
-              song.audio_url.startsWith(
-                "http"
-              )
+              song.audio_url.startsWith("http")
             ) {
               audioSignedUrl =
                 song.audio_url;
@@ -294,10 +367,44 @@ export default function CustomerDashboard() {
             }
           }
 
+          /* =================================================
+             FIND SONG SOURCE
+          ================================================= */
+
+          const subLabelSong =
+            subLabelSongRows.find(
+              (item) =>
+                item.song_id === song.id
+            );
+
+          const subLabel =
+            subLabelRowsForSongs.find(
+              (item) =>
+                item.id ===
+                subLabelSong?.sub_label_id
+            );
+
+          const sourceLabel = subLabel
+            ? subLabel.sub_label_name
+            : customerData.label_name ||
+              "Main Label";
+
+          const labelType = subLabel
+            ? "Sub Label"
+            : "Main Label";
+
           songsWithUrls.push({
             ...song,
+
+            source_label:
+              sourceLabel,
+
+            label_type:
+              labelType,
+
             cover_signed_url:
               coverSignedUrl,
+
             audio_signed_url:
               audioSignedUrl,
           });
@@ -404,7 +511,8 @@ export default function CustomerDashboard() {
             "Content-Type":
               "application/json",
 
-            Authorization: `Bearer ${session.access_token}`,
+            Authorization:
+              `Bearer ${session.access_token}`,
           },
 
           body: JSON.stringify({
@@ -496,6 +604,7 @@ export default function CustomerDashboard() {
         alert(
           "Session expire ho gaya. Dobara login karo."
         );
+
         router.replace("/login");
         return;
       }
@@ -504,10 +613,15 @@ export default function CustomerDashboard() {
         "/api/sub-labels/reset-password",
         {
           method: "POST",
+
           headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type":
+              "application/json",
+
+            Authorization:
+              `Bearer ${session.access_token}`,
           },
+
           body: JSON.stringify({
             sub_label_id: label.id,
             password,
@@ -515,13 +629,15 @@ export default function CustomerDashboard() {
         }
       );
 
-      const result = await response.json();
+      const result =
+        await response.json();
 
       if (!response.ok) {
         alert(
           result.error ||
             "Sub Label password reset nahi hua ❌"
         );
+
         return;
       }
 
@@ -530,6 +646,7 @@ export default function CustomerDashboard() {
       );
     } catch (error) {
       console.error(error);
+
       alert(
         "Sub Label password reset karte waqt error aa gaya ❌"
       );
@@ -637,16 +754,6 @@ export default function CustomerDashboard() {
         .filter(Boolean)
     ).size;
 
-  const totalAlbums =
-    new Set(
-      songs
-        .map(
-          (song) =>
-            song.album_name
-        )
-        .filter(Boolean)
-    ).size;
-
   /* =====================================================
      STATUS %
   ===================================================== */
@@ -690,10 +797,7 @@ export default function CustomerDashboard() {
   const artistStats =
     useMemo(() => {
       const map =
-        new Map<
-          string,
-          number
-        >();
+        new Map<string, number>();
 
       songs.forEach(
         (song) => {
@@ -703,8 +807,8 @@ export default function CustomerDashboard() {
 
           map.set(
             name,
-            (map.get(name) ||
-              0) + 1
+            (map.get(name) || 0) +
+              1
           );
         }
       );
@@ -755,11 +859,13 @@ export default function CustomerDashboard() {
             .includes(query) ||
           song.album_name
             ?.toLowerCase()
+            .includes(query) ||
+          song.source_label
+            ?.toLowerCase()
             .includes(query);
 
         const matchesStatus =
-          statusFilter ===
-            "All" ||
+          statusFilter === "All" ||
           (song.status || "")
             .toLowerCase() ===
             statusFilter.toLowerCase();
@@ -791,19 +897,14 @@ export default function CustomerDashboard() {
         i--
       ) {
         const date =
-          new Date(
-            today
-          );
+          new Date(today);
 
         date.setDate(
-          today.getDate() -
-            i
+          today.getDate() - i
         );
 
         const start =
-          new Date(
-            date
-          );
+          new Date(date);
 
         start.setHours(
           0,
@@ -813,9 +914,7 @@ export default function CustomerDashboard() {
         );
 
         const end =
-          new Date(
-            date
-          );
+          new Date(date);
 
         end.setHours(
           23,
@@ -838,10 +937,8 @@ export default function CustomerDashboard() {
                 );
 
               return (
-                created >=
-                  start &&
-                created <=
-                  end
+                created >= start &&
+                created <= end
               );
             }
           ).length;
@@ -866,22 +963,15 @@ export default function CustomerDashboard() {
     Math.max(
       1,
       ...last7Days.map(
-        (item) =>
-          item.count
+        (item) => item.count
       )
     );
 
-  /* =====================================================
-     TODAY / YESTERDAY
-  ===================================================== */
-
   const todayUploads =
-    last7Days[6]?.count ||
-    0;
+    last7Days[6]?.count || 0;
 
   const yesterdayUploads =
-    last7Days[5]?.count ||
-    0;
+    last7Days[5]?.count || 0;
 
   /* =====================================================
      LOADING
@@ -897,9 +987,7 @@ export default function CustomerDashboard() {
             Loading Customer Dashboard...
           </h2>
 
-          <p>
-            Please wait...
-          </p>
+          <p>Please wait...</p>
         </div>
 
         <style jsx>{`
@@ -910,9 +998,7 @@ export default function CustomerDashboard() {
             align-items: center;
             justify-content: center;
             color: white;
-            font-family: Arial,
-              Helvetica,
-              sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
           }
 
           .loading-box {
@@ -923,14 +1009,11 @@ export default function CustomerDashboard() {
           .spinner {
             width: 48px;
             height: 48px;
-            border: 4px solid
-              #17355c;
-            border-top-color:
-              #2f80ff;
+            border: 4px solid #17355c;
+            border-top-color: #2f80ff;
             border-radius: 50%;
             margin: 0 auto 20px;
-            animation: spin
-              0.8s linear infinite;
+            animation: spin 0.8s linear infinite;
           }
 
           h2 {
@@ -943,9 +1026,7 @@ export default function CustomerDashboard() {
 
           @keyframes spin {
             to {
-              transform: rotate(
-                360deg
-              );
+              transform: rotate(360deg);
             }
           }
         `}</style>
@@ -963,9 +1044,7 @@ export default function CustomerDashboard() {
 
           <button
             onClick={() =>
-              router.replace(
-                "/login"
-              )
+              router.replace("/login")
             }
           >
             Go To Login
@@ -983,8 +1062,7 @@ export default function CustomerDashboard() {
 
           .empty-box {
             background: #071a31;
-            border: 1px solid
-              #174a80;
+            border: 1px solid #174a80;
             padding: 40px;
             border-radius: 18px;
             color: white;
@@ -1009,9 +1087,7 @@ export default function CustomerDashboard() {
     <div className="dashboard-page">
       <div className="dashboard-layout">
 
-        {/* =================================================
-            SIDEBAR
-        ================================================= */}
+        {/* SIDEBAR */}
 
         <aside className="sidebar">
 
@@ -1022,9 +1098,7 @@ export default function CustomerDashboard() {
             />
 
             <div>
-              <strong>
-                SD Media
-              </strong>
+              <strong>SD Media</strong>
 
               <span>
                 Customer Dashboard
@@ -1040,17 +1114,13 @@ export default function CustomerDashboard() {
             </div>
 
             <div>
-              <small>
-                Welcome
-              </small>
+              <small>Welcome</small>
 
               <strong>
                 {customer.customer_name}
               </strong>
 
-              <span>
-                Customer
-              </span>
+              <span>Customer</span>
             </div>
           </div>
 
@@ -1075,9 +1145,7 @@ export default function CustomerDashboard() {
             <button
               className="menu-item"
               onClick={() =>
-                router.push(
-                  "/upload"
-                )
+                router.push("/upload")
               }
             >
               <span>⬆️</span>
@@ -1170,13 +1238,9 @@ export default function CustomerDashboard() {
 
         </aside>
 
-        {/* =================================================
-            MAIN
-        ================================================= */}
+        {/* MAIN */}
 
         <main className="main">
-
-          {/* HEADER */}
 
           <header className="header">
 
@@ -1220,47 +1284,35 @@ export default function CustomerDashboard() {
 
           <div className="content">
 
-            {/* =================================================
-                STATS
-            ================================================= */}
+            {/* STATS */}
 
             <section className="stats-grid">
 
               <StatCard
                 icon="🎵"
                 title="Total Songs"
-                value={
-                  totalSongs
-                }
-                subtitle={
-                  `${todayUploads} uploaded today`
-                }
+                value={totalSongs}
+                subtitle={`${todayUploads} uploaded today`}
                 type="blue"
               />
 
               <StatCard
                 icon="🏷️"
                 title="Total Sub Labels"
-                value={
-                  subLabels.length
-                }
-                subtitle={
-                  `${
-                    subLabels.filter(
-                      (item) =>
-                        item.is_active
-                    ).length
-                  } active`
-                }
+                value={subLabels.length}
+                subtitle={`${
+                  subLabels.filter(
+                    (item) =>
+                      item.is_active
+                  ).length
+                } active`}
                 type="purple"
               />
 
               <StatCard
                 icon="👥"
                 title="Total Artists"
-                value={
-                  totalArtists
-                }
+                value={totalArtists}
                 subtitle="Your music artists"
                 type="cyan"
               />
@@ -1268,44 +1320,30 @@ export default function CustomerDashboard() {
               <StatCard
                 icon="✓"
                 title="Approved Songs"
-                value={
-                  approvedSongs
-                }
-                subtitle={
-                  `${approvedPercent}% of songs`
-                }
+                value={approvedSongs}
+                subtitle={`${approvedPercent}% of songs`}
                 type="green"
               />
 
               <StatCard
                 icon="◷"
                 title="Pending Songs"
-                value={
-                  pendingSongs
-                }
-                subtitle={
-                  `${pendingPercent}% of songs`
-                }
+                value={pendingSongs}
+                subtitle={`${pendingPercent}% of songs`}
                 type="yellow"
               />
 
               <StatCard
                 icon="✕"
                 title="Rejected Songs"
-                value={
-                  rejectedSongs
-                }
-                subtitle={
-                  `${rejectedPercent}% of songs`
-                }
+                value={rejectedSongs}
+                subtitle={`${rejectedPercent}% of songs`}
                 type="red"
               />
 
             </section>
 
-            {/* =================================================
-                CONTENT ANALYTICS
-            ================================================= */}
+            {/* CONTENT ANALYTICS */}
 
             <section className="analytics-section">
 
@@ -1367,7 +1405,6 @@ export default function CustomerDashboard() {
                       viewBox="0 0 700 250"
                       preserveAspectRatio="none"
                     >
-
                       <polyline
                         points={last7Days
                           .map(
@@ -1389,9 +1426,7 @@ export default function CustomerDashboard() {
                               return `${x},${y}`;
                             }
                           )
-                          .join(
-                            " "
-                          )}
+                          .join(" ")}
                         fill="none"
                         stroke="#2581ff"
                         strokeWidth="5"
@@ -1417,42 +1452,29 @@ export default function CustomerDashboard() {
 
                           return (
                             <circle
-                              key={
-                                index
-                              }
-                              cx={
-                                x
-                              }
-                              cy={
-                                y
-                              }
+                              key={index}
+                              cx={x}
+                              cy={y}
                               r="6"
                               fill="#2581ff"
                             />
                           );
                         }
                       )}
-
                     </svg>
 
                     <div className="chart-labels">
-
                       {last7Days.map(
-                        (
-                          item
-                        ) => (
+                        (item) => (
                           <span
                             key={
                               item.label
                             }
                           >
-                            {
-                              item.label
-                            }
+                            {item.label}
                           </span>
                         )
                       )}
-
                     </div>
 
                   </div>
@@ -1514,19 +1536,15 @@ export default function CustomerDashboard() {
                         } as CSSProperties
                       }
                     >
-
                       <div className="donut-center">
                         <strong>
-                          {
-                            totalSongs
-                          }
+                          {totalSongs}
                         </strong>
 
                         <span>
                           Total Songs
                         </span>
                       </div>
-
                     </div>
 
                     <div className="donut-legend">
@@ -1539,16 +1557,11 @@ export default function CustomerDashboard() {
                         </span>
 
                         <strong>
-                          {
-                            approvedSongs
-                          }
+                          {approvedSongs}
                         </strong>
 
                         <small>
-                          {
-                            approvedPercent
-                          }
-                          %
+                          {approvedPercent}%
                         </small>
                       </div>
 
@@ -1560,16 +1573,11 @@ export default function CustomerDashboard() {
                         </span>
 
                         <strong>
-                          {
-                            pendingSongs
-                          }
+                          {pendingSongs}
                         </strong>
 
                         <small>
-                          {
-                            pendingPercent
-                          }
-                          %
+                          {pendingPercent}%
                         </small>
                       </div>
 
@@ -1581,16 +1589,11 @@ export default function CustomerDashboard() {
                         </span>
 
                         <strong>
-                          {
-                            rejectedSongs
-                          }
+                          {rejectedSongs}
                         </strong>
 
                         <small>
-                          {
-                            rejectedPercent
-                          }
-                          %
+                          {rejectedPercent}%
                         </small>
                       </div>
 
@@ -1625,9 +1628,7 @@ export default function CustomerDashboard() {
 
                       <div>
                         <strong>
-                          {
-                            subLabels.length
-                          }
+                          {subLabels.length}
                         </strong>
 
                         <span>
@@ -1649,9 +1650,7 @@ export default function CustomerDashboard() {
                         <strong>
                           {
                             subLabels.filter(
-                              (
-                                item
-                              ) =>
+                              (item) =>
                                 item.is_active
                             ).length
                           }
@@ -1668,9 +1667,7 @@ export default function CustomerDashboard() {
                         <strong>
                           {
                             subLabels.filter(
-                              (
-                                item
-                              ) =>
+                              (item) =>
                                 !item.is_active
                             ).length
                           }
@@ -1698,17 +1695,15 @@ export default function CustomerDashboard() {
                     </small>
 
                     <strong>
-                      {
-                        last7Days.reduce(
-                          (
-                            total,
-                            item
-                          ) =>
-                            total +
-                            item.count,
-                          0
-                        )
-                      }
+                      {last7Days.reduce(
+                        (
+                          total,
+                          item
+                        ) =>
+                          total +
+                          item.count,
+                        0
+                      )}
                     </strong>
 
                     <em>
@@ -1726,9 +1721,7 @@ export default function CustomerDashboard() {
                     </small>
 
                     <strong>
-                      {
-                        todayUploads
-                      }
+                      {todayUploads}
                     </strong>
 
                     <em>
@@ -1746,9 +1739,7 @@ export default function CustomerDashboard() {
                     </small>
 
                     <strong>
-                      {
-                        yesterdayUploads
-                      }
+                      {yesterdayUploads}
                     </strong>
 
                     <em>
@@ -1761,9 +1752,7 @@ export default function CustomerDashboard() {
 
             </section>
 
-            {/* =================================================
-                RECENT SONGS
-            ================================================= */}
+            {/* RECENT SONGS */}
 
             <section className="three-column">
 
@@ -1794,8 +1783,7 @@ export default function CustomerDashboard() {
 
                 </div>
 
-                {recentSongs.length ===
-                0 ? (
+                {recentSongs.length === 0 ? (
                   <div className="empty-data">
                     No songs found.
                   </div>
@@ -1806,9 +1794,7 @@ export default function CustomerDashboard() {
                       (song) => (
                         <div
                           className="recent-row"
-                          key={
-                            song.id
-                          }
+                          key={song.id}
                         >
 
                           {song.cover_signed_url ? (
@@ -1840,6 +1826,17 @@ export default function CustomerDashboard() {
                               }
                             </span>
 
+                            {/* NEW LABEL SOURCE */}
+
+                            <small className="song-source">
+                              {song.label_type ||
+                                "Main Label"}
+                              :{" "}
+                              {song.source_label ||
+                                customer.label_name ||
+                                "Main Label"}
+                            </small>
+
                           </div>
 
                           <span
@@ -1847,14 +1844,11 @@ export default function CustomerDashboard() {
                               (
                                 song.status ||
                                 "Pending"
-                              )
-                                .toLowerCase()
+                              ).toLowerCase()
                             }`}
                           >
-                            {
-                              song.status ||
-                              "Pending"
-                            }
+                            {song.status ||
+                              "Pending"}
                           </span>
 
                         </div>
@@ -1866,9 +1860,7 @@ export default function CustomerDashboard() {
 
               </div>
 
-              {/* =================================================
-                  TOP ARTISTS
-              ================================================= */}
+              {/* TOP ARTISTS */}
 
               <div className="panel">
 
@@ -1898,8 +1890,7 @@ export default function CustomerDashboard() {
 
                 <div className="artist-list">
 
-                  {artistStats.length ===
-                  0 ? (
+                  {artistStats.length === 0 ? (
                     <div className="empty-data">
                       No artists found.
                     </div>
@@ -1911,40 +1902,33 @@ export default function CustomerDashboard() {
                       ) => (
                         <div
                           className="artist-row"
-                          key={
-                            artist.name
-                          }
+                          key={artist.name}
                         >
 
                           <div className="artist-rank">
-                            {index +
-                              1}
+                            {index + 1}
                           </div>
 
                           <div className="artist-avatar">
                             {artist.name
-                              .charAt(
-                                0
-                              )
+                              .charAt(0)
                               .toUpperCase()}
                           </div>
 
                           <div className="artist-name">
+
                             <strong>
-                              {
-                                artist.name
-                              }
+                              {artist.name}
                             </strong>
 
                             <span>
                               Artist
                             </span>
+
                           </div>
 
                           <strong className="artist-count">
-                            {
-                              artist.count
-                            }
+                            {artist.count}
                           </strong>
 
                         </div>
@@ -1956,9 +1940,7 @@ export default function CustomerDashboard() {
 
               </div>
 
-              {/* =================================================
-                  SUB LABELS
-              ================================================= */}
+              {/* SUB LABELS */}
 
               <div className="panel">
 
@@ -1988,26 +1970,18 @@ export default function CustomerDashboard() {
 
                 <div className="sub-label-list">
 
-                  {subLabels.length ===
-                  0 ? (
+                  {subLabels.length === 0 ? (
                     <div className="empty-data">
                       No sub labels found.
                     </div>
                   ) : (
                     subLabels
-                      .slice(
-                        0,
-                        5
-                      )
+                      .slice(0, 5)
                       .map(
-                        (
-                          label
-                        ) => (
+                        (label) => (
                           <div
                             className="sub-label-row"
-                            key={
-                              label.id
-                            }
+                            key={label.id}
                           >
 
                             <div>
@@ -2018,9 +1992,7 @@ export default function CustomerDashboard() {
                               </strong>
 
                               <span>
-                                {
-                                  label.email
-                                }
+                                {label.email}
                               </span>
                             </div>
 
@@ -2047,9 +2019,7 @@ export default function CustomerDashboard() {
 
             </section>
 
-            {/* =================================================
-                MONTHLY PERFORMANCE
-            ================================================= */}
+            {/* MONTHLY PERFORMANCE */}
 
             <section className="panel performance-panel">
 
@@ -2130,16 +2100,13 @@ export default function CustomerDashboard() {
                       const height =
                         Math.min(
                           100,
-                          total *
-                            18
+                          total * 18
                         );
 
                       return (
                         <div
                           className="bar-group"
-                          key={
-                            month
-                          }
+                          key={month}
                         >
 
                           <div className="bar-area">
@@ -2147,58 +2114,54 @@ export default function CustomerDashboard() {
                             <div
                               className="bar total"
                               style={{
-                                height: `${height}%`,
+                                height:
+                                  `${height}%`,
                               }}
                             ></div>
 
                             <div
                               className="bar approved-bar"
                               style={{
-                                height: `${
-                                  Math.min(
+                                height:
+                                  `${Math.min(
                                     100,
                                     height *
                                       (approvedPercent /
                                         100)
-                                  )
-                                }%`,
+                                  )}%`,
                               }}
                             ></div>
 
                             <div
                               className="bar pending-bar"
                               style={{
-                                height: `${
-                                  Math.min(
+                                height:
+                                  `${Math.min(
                                     100,
                                     height *
                                       (pendingPercent /
                                         100)
-                                  )
-                                }%`,
+                                  )}%`,
                               }}
                             ></div>
 
                             <div
                               className="bar rejected-bar"
                               style={{
-                                height: `${
-                                  Math.min(
+                                height:
+                                  `${Math.min(
                                     100,
                                     height *
                                       (rejectedPercent /
                                         100)
-                                  )
-                                }%`,
+                                  )}%`,
                               }}
                             ></div>
 
                           </div>
 
                           <span>
-                            {
-                              month
-                            }
+                            {month}
                           </span>
 
                         </div>
@@ -2212,9 +2175,7 @@ export default function CustomerDashboard() {
 
             </section>
 
-            {/* =================================================
-                MY SONGS
-            ================================================= */}
+            {/* MY SONGS */}
 
             <section className="panel songs-panel">
 
@@ -2252,13 +2213,11 @@ export default function CustomerDashboard() {
                       e.target.value
                     )
                   }
-                  placeholder="Search song, artist or album..."
+                  placeholder="Search song, artist, album or label..."
                 />
 
                 <select
-                  value={
-                    statusFilter
-                  }
+                  value={statusFilter}
                   onChange={(e) =>
                     setStatusFilter(
                       e.target.value
@@ -2284,8 +2243,7 @@ export default function CustomerDashboard() {
 
               </div>
 
-              {filteredSongs.length ===
-              0 ? (
+              {filteredSongs.length === 0 ? (
                 <div className="empty-data large-empty">
                   No songs found.
                 </div>
@@ -2293,6 +2251,7 @@ export default function CustomerDashboard() {
                 <div className="songs-table">
 
                   <div className="table-head">
+
                     <span>
                       Song
                     </span>
@@ -2305,6 +2264,12 @@ export default function CustomerDashboard() {
                       Album
                     </span>
 
+                    {/* NEW */}
+
+                    <span>
+                      Label / Sub Label
+                    </span>
+
                     <span>
                       Status
                     </span>
@@ -2312,22 +2277,16 @@ export default function CustomerDashboard() {
                     <span>
                       Action
                     </span>
+
                   </div>
 
                   {filteredSongs
-                    .slice(
-                      0,
-                      8
-                    )
+                    .slice(0, 8)
                     .map(
-                      (
-                        song
-                      ) => (
+                      (song) => (
                         <div
                           className="table-row"
-                          key={
-                            song.id
-                          }
+                          key={song.id}
                         >
 
                           <div className="song-cell">
@@ -2348,6 +2307,7 @@ export default function CustomerDashboard() {
                             )}
 
                             <div>
+
                               <strong>
                                 {
                                   song.song_title
@@ -2360,6 +2320,7 @@ export default function CustomerDashboard() {
                                   song.artist_name
                                 }
                               </small>
+
                             </div>
 
                           </div>
@@ -2378,13 +2339,29 @@ export default function CustomerDashboard() {
                             }
                           </span>
 
+                          {/* NEW LABEL COLUMN */}
+
+                          <div className="song-source-cell">
+
+                            <strong>
+                              {song.label_type ||
+                                "Main Label"}
+                            </strong>
+
+                            <small>
+                              {song.source_label ||
+                                customer.label_name ||
+                                "—"}
+                            </small>
+
+                          </div>
+
                           <span
                             className={`status-badge ${
                               (
                                 song.status ||
                                 "Pending"
-                              )
-                                .toLowerCase()
+                              ).toLowerCase()
                             }`}
                           >
                             {
@@ -2413,9 +2390,7 @@ export default function CustomerDashboard() {
 
             </section>
 
-            {/* =================================================
-                SUB LABEL MANAGEMENT
-            ================================================= */}
+            {/* SUB LABEL MANAGEMENT */}
 
             <section className="panel sub-management">
 
@@ -2450,9 +2425,7 @@ export default function CustomerDashboard() {
                 <div className="sub-form">
 
                   <input
-                    value={
-                      subLabelName
-                    }
+                    value={subLabelName}
                     onChange={(e) =>
                       setSubLabelName(
                         e.target.value
@@ -2463,9 +2436,7 @@ export default function CustomerDashboard() {
 
                   <input
                     type="email"
-                    value={
-                      subLabelEmail
-                    }
+                    value={subLabelEmail}
                     onChange={(e) =>
                       setSubLabelEmail(
                         e.target.value
@@ -2475,9 +2446,7 @@ export default function CustomerDashboard() {
                   />
 
                   <button
-                    onClick={
-                      addSubLabel
-                    }
+                    onClick={addSubLabel}
                     disabled={
                       creatingSubLabel
                     }
@@ -2517,9 +2486,7 @@ export default function CustomerDashboard() {
 
                   <button
                     onClick={() =>
-                      setLoginDetails(
-                        null
-                      )
+                      setLoginDetails(null)
                     }
                   >
                     Close
@@ -2528,8 +2495,7 @@ export default function CustomerDashboard() {
                 </div>
               )}
 
-              {subLabels.length ===
-              0 ? (
+              {subLabels.length === 0 ? (
                 <div className="empty-data">
                   No Sub Labels found.
                 </div>
@@ -2537,14 +2503,10 @@ export default function CustomerDashboard() {
                 <div className="management-list">
 
                   {subLabels.map(
-                    (
-                      label
-                    ) => (
+                    (label) => (
                       <div
                         className="management-row"
-                        key={
-                          label.id
-                        }
+                        key={label.id}
                       >
 
                         <div className="management-icon">
@@ -2560,9 +2522,7 @@ export default function CustomerDashboard() {
                           </strong>
 
                           <span>
-                            {
-                              label.email
-                            }
+                            {label.email}
                           </span>
 
                         </div>
@@ -2610,9 +2570,7 @@ export default function CustomerDashboard() {
 
             </section>
 
-            {/* =================================================
-                PROFILE
-            ================================================= */}
+            {/* PROFILE */}
 
             <section className="profile-card">
 
@@ -2655,7 +2613,6 @@ export default function CustomerDashboard() {
             </footer>
 
           </div>
-
         </main>
       </div>
 
@@ -2669,10 +2626,7 @@ export default function CustomerDashboard() {
           min-height: 100vh;
           background: #020b18;
           color: #dbeafe;
-          font-family:
-            Arial,
-            Helvetica,
-            sans-serif;
+          font-family: Arial, Helvetica, sans-serif;
         }
 
         .dashboard-layout {
@@ -2680,9 +2634,7 @@ export default function CustomerDashboard() {
           min-height: 100vh;
         }
 
-        /* =====================================================
-           SIDEBAR
-        ===================================================== */
+        /* SIDEBAR */
 
         .sidebar {
           width: 214px;
@@ -2818,7 +2770,7 @@ export default function CustomerDashboard() {
           color: white;
           box-shadow:
             0 8px 20px
-              rgba(24, 105, 235, 0.2);
+            rgba(24, 105, 235, 0.2);
         }
 
         .copyright-menu {
@@ -2849,9 +2801,7 @@ export default function CustomerDashboard() {
           align-items: center;
         }
 
-        /* =====================================================
-           MAIN
-        ===================================================== */
+        /* MAIN */
 
         .main {
           margin-left: 214px;
@@ -2860,12 +2810,7 @@ export default function CustomerDashboard() {
           background:
             radial-gradient(
               circle at 70% 0%,
-              rgba(
-                14,
-                70,
-                135,
-                0.16
-              ),
+              rgba(14, 70, 135, 0.16),
               transparent 35%
             ),
             #020b18;
@@ -2940,9 +2885,7 @@ export default function CustomerDashboard() {
           padding: 22px 24px 40px;
         }
 
-        /* =====================================================
-           STATS
-        ===================================================== */
+        /* STATS */
 
         .stats-grid {
           display: grid;
@@ -3018,9 +2961,7 @@ export default function CustomerDashboard() {
           background: #3d3514;
         }
 
-        /* =====================================================
-           PANELS
-        ===================================================== */
+        /* PANELS */
 
         .analytics-section,
         .panel,
@@ -3107,9 +3048,7 @@ export default function CustomerDashboard() {
           cursor: pointer;
         }
 
-        /* =====================================================
-           LINE CHART
-        ===================================================== */
+        /* LINE CHART */
 
         .line-chart {
           height: 235px;
@@ -3129,8 +3068,7 @@ export default function CustomerDashboard() {
         }
 
         .chart-grid-lines span {
-          border-top: 1px dashed
-            #12385d;
+          border-top: 1px dashed #12385d;
         }
 
         .line-chart svg {
@@ -3155,9 +3093,7 @@ export default function CustomerDashboard() {
           font-size: 9px;
         }
 
-        /* =====================================================
-           DONUT
-        ===================================================== */
+        /* DONUT */
 
         .donut-area {
           display: flex;
@@ -3250,9 +3186,7 @@ export default function CustomerDashboard() {
           background: #6e8baa;
         }
 
-        /* =====================================================
-           SUB LABEL DONUT
-        ===================================================== */
+        /* SUB LABEL DONUT */
 
         .sub-label-donut {
           min-height: 220px;
@@ -3297,9 +3231,7 @@ export default function CustomerDashboard() {
           font-size: 8px;
         }
 
-        /* =====================================================
-           MINI
-        ===================================================== */
+        /* MINI */
 
         .mini-grid {
           display: grid;
@@ -3353,9 +3285,7 @@ export default function CustomerDashboard() {
           font-style: normal;
         }
 
-        /* =====================================================
-           THREE COLUMNS
-        ===================================================== */
+        /* THREE COLUMNS */
 
         .three-column {
           display: grid;
@@ -3424,6 +3354,18 @@ export default function CustomerDashboard() {
           color: #6f8baa;
           font-size: 8px;
           margin-top: 3px;
+        }
+
+        /* NEW */
+
+        .recent-info .song-source {
+          display: block;
+          color: #3e9cff;
+          font-size: 7px;
+          margin-top: 3px;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
         }
 
         .status-badge,
@@ -3522,9 +3464,7 @@ export default function CustomerDashboard() {
           text-overflow: ellipsis;
         }
 
-        /* =====================================================
-           PERFORMANCE
-        ===================================================== */
+        /* PERFORMANCE */
 
         .performance-panel {
           margin-bottom: 16px;
@@ -3641,186 +3581,7 @@ export default function CustomerDashboard() {
           font-size: 8px;
         }
 
-        /* =====================================================
-           COPYRIGHT
-        ===================================================== */
-
-        .copyright-section {
-          margin-bottom: 16px;
-          overflow: hidden;
-          border-color: #6d5916;
-          background:
-            linear-gradient(
-              135deg,
-              #071b31,
-              #0a1e32
-            );
-        }
-
-        .copyright-header {
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          padding: 16px;
-          border-bottom: 1px solid #3e381e;
-        }
-
-        .copyright-icon {
-          width: 44px;
-          height: 44px;
-          border-radius: 10px;
-          background: #3a3215;
-          border: 1px solid #80671c;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 20px;
-        }
-
-        .copyright-header h2 {
-          color: white;
-          margin: 0;
-          font-size: 16px;
-        }
-
-        .copyright-header p {
-          color: #8098b1;
-          font-size: 9px;
-          margin: 5px 0 0;
-        }
-
-        .copyright-status {
-          margin-left: auto;
-          padding: 7px 10px;
-          border-radius: 6px;
-          background: #3b3214;
-          color: #ffd13c;
-          border: 1px solid #725d18;
-          font-size: 8px;
-        }
-
-        .copyright-body {
-          padding: 15px;
-        }
-
-        .copyright-info {
-          display: grid;
-          grid-template-columns:
-            repeat(3, 1fr);
-          gap: 10px;
-          margin-bottom: 13px;
-        }
-
-        .info-box {
-          background: #06182d;
-          border: 1px solid #1a3b5e;
-          border-radius: 8px;
-          padding: 11px;
-        }
-
-        .info-box strong {
-          display: block;
-          color: #dcecff;
-          font-size: 9px;
-        }
-
-        .info-box span {
-          display: block;
-          color: #718dab;
-          font-size: 8px;
-          line-height: 1.5;
-          margin-top: 5px;
-        }
-
-        .copyright-button,
-        .submit-copyright {
-          background: #e5b800;
-          color: #07111e;
-          border: none;
-          border-radius: 7px;
-          padding: 10px 14px;
-          font-weight: 700;
-          cursor: pointer;
-          font-size: 9px;
-        }
-
-        .copyright-button:hover,
-        .submit-copyright:hover {
-          background: #ffd21c;
-        }
-
-        .copyright-form {
-          border-top: 1px solid #3e381e;
-          padding: 16px;
-          display: grid;
-          gap: 12px;
-        }
-
-        .form-title h3 {
-          color: white;
-          margin: 0;
-          font-size: 13px;
-        }
-
-        .form-title p {
-          color: #7892ad;
-          font-size: 9px;
-          margin: 5px 0 0;
-        }
-
-        .copyright-form label {
-          display: grid;
-          gap: 6px;
-          color: #b8cce1;
-          font-size: 9px;
-        }
-
-        .copyright-form input,
-        .copyright-form select,
-        .copyright-form textarea {
-          width: 100%;
-          background: #06172b;
-          color: white;
-          border: 1px solid #214767;
-          border-radius: 7px;
-          padding: 10px;
-          outline: none;
-          font-family: inherit;
-          font-size: 10px;
-        }
-
-        .copyright-form textarea {
-          resize: vertical;
-        }
-
-        .copyright-form input:focus,
-        .copyright-form select:focus,
-        .copyright-form textarea:focus {
-          border-color: #d6af16;
-        }
-
-        .copyright-note {
-          padding: 10px;
-          background: #251f0c;
-          border: 1px solid #5c4d18;
-          color: #c6b56a;
-          border-radius: 7px;
-          font-size: 8px;
-          line-height: 1.5;
-        }
-
-        .submitted-message {
-          padding: 10px;
-          background: #073b31;
-          border: 1px solid #0b7962;
-          color: #41e4b6;
-          border-radius: 7px;
-          font-size: 9px;
-        }
-
-        /* =====================================================
-           SONGS
-        ===================================================== */
+        /* SONGS */
 
         .songs-panel {
           margin-bottom: 16px;
@@ -3851,12 +3612,14 @@ export default function CustomerDashboard() {
           min-width: 130px;
         }
 
+        /* CHANGED TO 6 COLUMNS */
+
         .table-head,
         .table-row {
           display: grid;
           grid-template-columns:
-            2fr 1.1fr 1.1fr
-            0.8fr 0.7fr;
+            2fr 1.05fr 1.05fr
+            1.25fr 0.8fr 0.7fr;
           gap: 10px;
           align-items: center;
         }
@@ -3914,6 +3677,31 @@ export default function CustomerDashboard() {
           margin-top: 2px;
         }
 
+        /* NEW LABEL CELL */
+
+        .song-source-cell {
+          min-width: 0;
+        }
+
+        .song-source-cell strong,
+        .song-source-cell small {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .song-source-cell strong {
+          color: #55a5ff;
+          font-size: 8px;
+        }
+
+        .song-source-cell small {
+          color: #718eab;
+          font-size: 7px;
+          margin-top: 2px;
+        }
+
         .view-song {
           border: 1px solid #20517d;
           background: #092340;
@@ -3924,9 +3712,7 @@ export default function CustomerDashboard() {
           cursor: pointer;
         }
 
-        /* =====================================================
-           SUB MANAGEMENT
-        ===================================================== */
+        /* SUB MANAGEMENT */
 
         .sub-management {
           margin-bottom: 16px;
@@ -4072,9 +3858,7 @@ export default function CustomerDashboard() {
           font-size: 8px;
         }
 
-        /* =====================================================
-           PROFILE
-        ===================================================== */
+        /* PROFILE */
 
         .profile-card {
           background:
@@ -4130,9 +3914,7 @@ export default function CustomerDashboard() {
           font-size: 9px;
         }
 
-        /* =====================================================
-           EMPTY
-        ===================================================== */
+        /* EMPTY */
 
         .empty-data {
           color: #6683a0;
@@ -4145,9 +3927,7 @@ export default function CustomerDashboard() {
           padding: 50px;
         }
 
-        /* =====================================================
-           FOOTER
-        ===================================================== */
+        /* FOOTER */
 
         .footer {
           text-align: center;
@@ -4156,13 +3936,10 @@ export default function CustomerDashboard() {
           padding: 24px 0 0;
         }
 
-        /* =====================================================
-           RESPONSIVE
-        ===================================================== */
+        /* RESPONSIVE */
 
-        @media (
-          max-width: 1200px
-        ) {
+        @media (max-width: 1200px) {
+
           .stats-grid {
             grid-template-columns:
               repeat(3, 1fr);
@@ -4185,11 +3962,17 @@ export default function CustomerDashboard() {
           .recent-panel {
             grid-column: 1 / -1;
           }
+
+          .table-head,
+          .table-row {
+            grid-template-columns:
+              2fr 1fr 1fr
+              1.2fr 0.8fr 0.7fr;
+          }
         }
 
-        @media (
-          max-width: 800px
-        ) {
+        @media (max-width: 800px) {
+
           .sidebar {
             width: 70px;
             min-width: 70px;
@@ -4230,9 +4013,7 @@ export default function CustomerDashboard() {
 
           .main {
             margin-left: 70px;
-            width: calc(
-              100% - 70px
-            );
+            width: calc(100% - 70px);
           }
 
           .content {
@@ -4246,40 +4027,38 @@ export default function CustomerDashboard() {
 
           .analytics-grid,
           .three-column {
-            grid-template-columns:
-              1fr;
+            grid-template-columns: 1fr;
           }
 
           .daily-panel {
             grid-column: auto;
           }
 
-          .copyright-info {
-            grid-template-columns:
-              1fr;
-          }
-
           .sub-form {
-            grid-template-columns:
-              1fr;
+            grid-template-columns: 1fr;
           }
 
           .header {
             padding: 0 15px;
           }
+
+          .table-head,
+          .table-row {
+            grid-template-columns:
+              1.7fr 1fr 1fr
+              1.1fr 0.7fr 0.7fr;
+            gap: 6px;
+          }
         }
 
-        @media (
-          max-width: 520px
-        ) {
+        @media (max-width: 520px) {
+
           .stats-grid {
-            grid-template-columns:
-              1fr;
+            grid-template-columns: 1fr;
           }
 
           .mini-grid {
-            grid-template-columns:
-              1fr;
+            grid-template-columns: 1fr;
           }
 
           .header-user
@@ -4298,7 +4077,8 @@ export default function CustomerDashboard() {
           }
 
           .table-row > span:nth-child(2),
-          .table-row > span:nth-child(3) {
+          .table-row > span:nth-child(3),
+          .song-source-cell {
             display: none;
           }
 
@@ -4322,6 +4102,15 @@ export default function CustomerDashboard() {
 
           .copyright-status {
             display: none;
+          }
+
+          .management-row {
+            flex-wrap: wrap;
+          }
+
+          .reset-password-button,
+          .delete-button {
+            margin-top: 5px;
           }
         }
 
