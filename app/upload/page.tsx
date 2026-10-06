@@ -18,20 +18,21 @@ export default function UploadPage() {
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
+
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [customerName, setCustomerName] = useState("");
   const [labelName, setLabelName] = useState("");
 
   const [subLabels, setSubLabels] = useState<SubLabel[]>([]);
-  const [selectedSubLabelId, setSelectedSubLabelId] =
-    useState("main");
+  const [selectedSubLabelId, setSelectedSubLabelId] = useState("main");
 
   const [songTitle, setSongTitle] = useState("");
   const [artistName, setArtistName] = useState("");
   const [albumName, setAlbumName] = useState("");
   const [singerName, setSingerName] = useState("");
   const [composer, setComposer] = useState("");
+  const [musicDirector, setMusicDirector] = useState("");
   const [lyricist, setLyricist] = useState("");
   const [genre, setGenre] = useState("");
   const [language, setLanguage] = useState("");
@@ -41,713 +42,323 @@ export default function UploadPage() {
   const [audio, setAudio] = useState<File | null>(null);
 
   useEffect(() => {
-    let mounted = true;
-
-    async function checkUser() {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (!session) {
-          router.replace("/login");
-          return;
-        }
-
-        let role = "";
-
-        try {
-          const roleResponse = await fetch("/api/auth/role", {
-            cache: "no-store",
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          });
-
-          if (roleResponse.ok) {
-            const roleData = await roleResponse.json();
-
-            console.log("Upload Page Role:", roleData);
-
-            role = String(
-              roleData?.role || ""
-            ).toLowerCase();
-
-            /*
-              ADMIN
-            */
-            if (
-              role === "admin" ||
-              role === "administrator" ||
-              role === "super_admin"
-            ) {
-              if (mounted) {
-                setIsAdmin(true);
-                setCheckingAuth(false);
-              }
-
-              return;
-            }
-
-            /*
-              CUSTOMER FROM ROLE API
-            */
-            if (
-              role === "customer" &&
-              roleData?.customer
-            ) {
-              const customer =
-                roleData.customer;
-
-              if (mounted) {
-                setIsAdmin(false);
-
-                setCustomerName(
-                  customer.customer_name || ""
-                );
-
-                setLabelName(
-                  customer.label_name || ""
-                );
-              }
-
-              /*
-                CUSTOMER KE SAARE ACTIVE
-                SUB LABELS LOAD KARO
-              */
-
-              const {
-                data: subLabelData,
-                error: subLabelError,
-              } = await supabase
-                .from("sub_labels")
-                .select(
-                  `
-                    id,
-                    customer_id,
-                    sub_label_name,
-                    email,
-                    auth_user_id,
-                    is_active
-                  `
-                )
-                .eq(
-                  "customer_id",
-                  customer.id
-                )
-                .eq(
-                  "is_active",
-                  true
-                )
-                .order(
-                  "created_at",
-                  {
-                    ascending: false,
-                  }
-                );
-
-              if (subLabelError) {
-                console.error(
-                  "Sub Labels Load Error:",
-                  subLabelError
-                );
-              } else if (mounted) {
-                setSubLabels(
-                  subLabelData || []
-                );
-              }
-
-              if (mounted) {
-                setCheckingAuth(false);
-              }
-
-              return;
-            }
-          } else {
-            const roleError =
-              await roleResponse.text();
-
-            console.error(
-              "Role API error:",
-              roleResponse.status,
-              roleError
-            );
-          }
-        } catch (roleError) {
-          console.error(
-            "Role check error:",
-            roleError
-          );
-        }
-
-        /*
-          CUSTOMER FALLBACK CHECK
-        */
-
-        const {
-          data: customer,
-          error: customerError,
-        } = await supabase
-          .from("customers")
-          .select(
-            "id, customer_name, label_name"
-          )
-          .eq(
-            "auth_user_id",
-            session.user.id
-          )
-          .single();
-
-        if (
-          customerError ||
-          !customer
-        ) {
-          console.error(
-            "Customer check error:",
-            customerError
-          );
-
-          alert(
-            "Customer account नहीं मिला ❌"
-          );
-
-          router.replace("/login");
-          return;
-        }
-
-        /*
-          CUSTOMER INFO
-        */
-
-        if (mounted) {
-          setCustomerName(
-            customer.customer_name || ""
-          );
-
-          setLabelName(
-            customer.label_name || ""
-          );
-        }
-
-        /*
-          CUSTOMER KE ACTIVE SUB LABELS
-        */
-
-        const {
-          data: subLabelData,
-          error: subLabelError,
-        } = await supabase
-          .from("sub_labels")
-          .select(
-            `
-              id,
-              customer_id,
-              sub_label_name,
-              email,
-              auth_user_id,
-              is_active
-            `
-          )
-          .eq(
-            "customer_id",
-            customer.id
-          )
-          .eq(
-            "is_active",
-            true
-          )
-          .order(
-            "created_at",
-            {
-              ascending: false,
-            }
-          );
-
-        if (subLabelError) {
-          console.error(
-            "Sub Labels Load Error:",
-            subLabelError
-          );
-        } else if (mounted) {
-          setSubLabels(
-            subLabelData || []
-          );
-        }
-
-        if (mounted) {
-          setIsAdmin(false);
-          setCheckingAuth(false);
-        }
-      } catch (error) {
-        console.error(
-          "Auth check error:",
-          error
-        );
-
-        router.replace("/login");
-      }
-    }
-
     checkUser();
+  }, []);
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!session) {
-          router.replace("/login");
-        }
-      }
-    );
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [router]);
-
-  async function handleSubmit(
-    e: React.FormEvent
-  ) {
-    e.preventDefault();
-
-    if (!songTitle.trim()) {
-      alert("Please enter Song Title");
-      return;
-    }
-
-    if (!artistName.trim()) {
-      alert("Please enter Artist Name");
-      return;
-    }
-
-    if (!cover || !audio) {
-      alert(
-        "Please select Cover Image and Audio File"
-      );
-      return;
-    }
-
-    setLoading(true);
-
+  async function checkUser() {
     try {
+      setCheckingAuth(true);
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
       if (!session) {
-        router.replace("/login");
+        router.push("/login");
         return;
       }
 
-      let customer: {
-        id: number;
-        customer_name: string | null;
-        label_name: string | null;
-      } | null = null;
+      const roleResponse = await fetch("/api/auth/role", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
-      /*
-        CUSTOMER ACCOUNT
-      */
+      const roleData = await roleResponse.json();
+
+      console.log("Upload role:", roleData);
+
+      if (!roleResponse.ok) {
+        alert(roleData?.error || "Role check failed");
+        router.push("/login");
+        return;
+      }
+
+      if (roleData.role === "admin") {
+        setIsAdmin(true);
+        setCheckingAuth(false);
+        return;
+      }
+
+      if (roleData.role !== "customer") {
+        alert("You are not authorized to upload songs.");
+        router.push("/login");
+        return;
+      }
+
+      const customer = roleData.customer;
+
+      if (!customer?.id) {
+        alert("Customer account नहीं मिला ❌");
+        router.push("/login");
+        return;
+      }
+
+      setCustomerName(customer.customer_name || "");
+      setLabelName(customer.label_name || "");
+
+      const { data: subLabelData, error: subLabelError } = await supabase
+        .from("sub_labels")
+        .select(
+          "id, customer_id, sub_label_name, email, auth_user_id, is_active, created_at"
+        )
+        .eq("customer_id", customer.id)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+
+      if (subLabelError) {
+        console.error("Sub label load error:", subLabelError);
+      } else {
+        setSubLabels(subLabelData || []);
+      }
+
+      setCheckingAuth(false);
+    } catch (error) {
+      console.error("Auth check error:", error);
+      alert("Something went wrong.");
+      router.push("/login");
+    }
+  }
+
+  async function uploadFile(
+    file: File,
+    folder: string,
+    fallbackContentType: string
+  ) {
+    const extension =
+      file.name.split(".").pop()?.toLowerCase() || "file";
+
+    const fileName = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 10)}.${extension}`;
+
+    const filePath = `${folder}/${fileName}`;
+
+    const { error } = await supabase.storage
+      .from("songs")
+      .upload(filePath, file, {
+        contentType: file.type || fallbackContentType,
+        upsert: false,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    return filePath;
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!songTitle.trim()) {
+      alert("Song Title डालें.");
+      return;
+    }
+
+    if (!artistName.trim()) {
+      alert("Artist Name डालें.");
+      return;
+    }
+
+    if (!cover) {
+      alert("Cover Image select करें.");
+      return;
+    }
+
+    if (!audio) {
+      alert("Audio File select करें.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        alert("Session expired. Please login again.");
+        router.push("/login");
+        return;
+      }
+
+      let customerId: number | null = null;
 
       if (!isAdmin) {
-        const {
-          data: customerData,
-          error: customerError,
-        } = await supabase
-          .from("customers")
-          .select(
-            "id, customer_name, label_name"
-          )
-          .eq(
-            "auth_user_id",
-            session.user.id
-          )
-          .single();
+        const roleResponse = await fetch("/api/auth/role", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
 
-        if (
-          customerError ||
-          !customerData
-        ) {
-          console.error(
-            "Customer fetch error:",
-            customerError
-          );
+        const roleData = await roleResponse.json();
 
-          throw new Error(
-            "Customer account नहीं मिला"
-          );
+        if (!roleResponse.ok || roleData.role !== "customer") {
+          alert("Customer authorization failed.");
+          return;
         }
 
-        customer = customerData;
+        customerId = Number(roleData.customer?.id);
 
-        /*
-          SELECTED SUB LABEL KI SECURITY CHECK
-          SIRF TAB HOGA JAB SUB LABEL SELECT KIYA HO
-        */
-
-        if (
-          selectedSubLabelId &&
-          selectedSubLabelId !== "main"
-        ) {
-          const {
-            data: selectedSubLabel,
-            error:
-              selectedSubLabelError,
-          } = await supabase
-            .from("sub_labels")
-            .select(
-              "id, customer_id, sub_label_name, is_active"
-            )
-            .eq(
-              "id",
-              Number(selectedSubLabelId)
-            )
-            .eq(
-              "customer_id",
-              customer.id
-            )
-            .eq(
-              "is_active",
-              true
-            )
-            .maybeSingle();
-
-          if (
-            selectedSubLabelError ||
-            !selectedSubLabel
-          ) {
-            console.error(
-              "Selected Sub Label Error:",
-              selectedSubLabelError
-            );
-
-            throw new Error(
-              "Selected Sub Label valid नहीं है"
-            );
-          }
+        if (!customerId) {
+          alert("Customer account नहीं मिला ❌");
+          return;
         }
       }
 
-      const timestamp = Date.now();
+      let selectedSubLabel: SubLabel | null = null;
 
-      const coverName =
-        `${timestamp}-${cover.name}`;
+      if (
+        !isAdmin &&
+        selectedSubLabelId &&
+        selectedSubLabelId !== "main"
+      ) {
+        selectedSubLabel =
+          subLabels.find(
+            (item) => String(item.id) === String(selectedSubLabelId)
+          ) || null;
 
-      const audioName =
-        `${timestamp}-${audio.name}`;
+        if (!selectedSubLabel) {
+          alert("Selected Sub Label valid नहीं है.");
+          return;
+        }
 
-      const coverPath =
-        `covers/${coverName}`;
+        if (
+          Number(selectedSubLabel.customer_id) !== Number(customerId)
+        ) {
+          alert("Selected Sub Label इस customer का नहीं है.");
+          return;
+        }
 
-      const audioPath =
-        `audio/${audioName}`;
-
-      /*
-        UPLOAD COVER
-      */
-
-      const {
-        error: coverError,
-      } = await supabase.storage
-        .from("songs")
-        .upload(
-          coverPath,
-          cover
-        );
-
-      if (coverError) {
-        console.error(
-          "Cover upload error:",
-          coverError
-        );
-
-        throw coverError;
+        if (!selectedSubLabel.is_active) {
+          alert("Selected Sub Label inactive है.");
+          return;
+        }
       }
 
-      /*
-        UPLOAD AUDIO
-        WAV + MP3 SUPPORT
-      */
+      const coverPath = await uploadFile(
+        cover,
+        "covers",
+        "image/jpeg"
+      );
 
-      const {
-        error: audioError,
-      } = await supabase.storage
-        .from("songs")
-        .upload(
-          audioPath,
+      let audioPath = "";
+
+      try {
+        audioPath = await uploadFile(
           audio,
-          {
-            contentType:
-              audio.type || "audio/wav",
-            upsert: false,
-          }
+          "audio",
+          audio.type || "audio/wav"
         );
-
-      if (audioError) {
-        console.error(
-          "Audio upload error:",
-          audioError
-        );
-
+      } catch (audioError) {
         await supabase.storage
           .from("songs")
-          .remove([
-            coverPath,
-          ]);
+          .remove([coverPath]);
 
         throw audioError;
       }
 
-      /*
-        CREATE SONG
-      */
-
-      const {
-        data: newSong,
-        error: databaseError,
-      } = await supabase
+      const { data: newSong, error: songError } = await supabase
         .from("songs")
-        .insert([
-          {
-            song_title:
-              songTitle.trim(),
-
-            artist_name:
-              artistName.trim(),
-
-            album_name:
-              albumName.trim(),
-
-            singer_name:
-              singerName.trim(),
-
-            composer:
-              composer.trim(),
-
-            lyricist:
-              lyricist.trim(),
-
-            genre:
-              genre.trim(),
-
-            language:
-              language.trim(),
-
-            release_date:
-              releaseDate || null,
-
-            cover_url:
-              coverPath,
-
-            audio_url:
-              audioPath,
-
-            status:
-              "Pending",
-          },
-        ])
-        .select("id")
+        .insert({
+          song_title: songTitle.trim(),
+          artist_name: artistName.trim(),
+          album_name: albumName.trim(),
+          singer_name: singerName.trim(),
+          composer: composer.trim(),
+          music_director: musicDirector.trim(),
+          lyricist: lyricist.trim(),
+          genre: genre.trim(),
+          language: language.trim(),
+          release_date: releaseDate || null,
+          cover_url: coverPath,
+          audio_url: audioPath,
+          status: "Pending",
+        })
+        .select()
         .single();
 
-      if (
-        databaseError ||
-        !newSong
-      ) {
-        console.error(
-          "Song database error:",
-          databaseError
-        );
-
+      if (songError || !newSong) {
         await supabase.storage
           .from("songs")
-          .remove([
-            coverPath,
-            audioPath,
-          ]);
+          .remove([coverPath, audioPath]);
 
-        throw (
-          databaseError ||
-          new Error(
-            "Song create failed"
-          )
-        );
+        throw songError || new Error("Song insert failed.");
       }
 
-      /*
-        CUSTOMER SONG LINK
-      */
-
-      if (
-        !isAdmin &&
-        customer
-      ) {
-        const {
-          error:
-            customerSongError,
-        } = await supabase
+      if (!isAdmin && customerId) {
+        const { error: customerSongError } = await supabase
           .from("customer_songs")
-          .insert([
-            {
-              customer_id:
-                customer.id,
-
-              song_id:
-                newSong.id,
-            },
-          ]);
+          .insert({
+            customer_id: customerId,
+            song_id: newSong.id,
+          });
 
         if (customerSongError) {
-          console.error(
-            "Customer song linking error:",
-            customerSongError
-          );
-
           await supabase
             .from("songs")
             .delete()
-            .eq(
-              "id",
-              newSong.id
-            );
+            .eq("id", newSong.id);
 
           await supabase.storage
             .from("songs")
-            .remove([
-              coverPath,
-              audioPath,
-            ]);
+            .remove([coverPath, audioPath]);
 
           throw customerSongError;
         }
-
-        /*
-          SUB LABEL SONG LINK
-          SIRF SUB LABEL SELECT HONE PAR
-        */
 
         if (
           selectedSubLabelId &&
           selectedSubLabelId !== "main"
         ) {
-          const {
-            error:
-              subLabelSongError,
-          } = await supabase
+          const { error: subLabelSongError } = await supabase
             .from("sub_label_songs")
-            .insert([
-              {
-                sub_label_id:
-                  Number(
-                    selectedSubLabelId
-                  ),
+            .insert({
+              sub_label_id: Number(selectedSubLabelId),
+              song_id: newSong.id,
+            });
 
-                song_id:
-                  newSong.id,
-              },
-            ]);
-
-          if (
-            subLabelSongError
-          ) {
-            console.error(
-              "Sub Label song linking error:",
-              subLabelSongError
-            );
-
-            /*
-              CUSTOMER LINK DELETE
-            */
-
+          if (subLabelSongError) {
             await supabase
               .from("customer_songs")
               .delete()
-              .eq(
-                "song_id",
-                newSong.id
-              )
-              .eq(
-                "customer_id",
-                customer.id
-              );
-
-            /*
-              SONG DELETE
-            */
+              .eq("customer_id", customerId)
+              .eq("song_id", newSong.id);
 
             await supabase
               .from("songs")
               .delete()
-              .eq(
-                "id",
-                newSong.id
-              );
-
-            /*
-              FILE DELETE
-            */
+              .eq("id", newSong.id);
 
             await supabase.storage
               .from("songs")
-              .remove([
-                coverPath,
-                audioPath,
-              ]);
+              .remove([coverPath, audioPath]);
 
             throw subLabelSongError;
           }
         }
       }
 
-      /*
-        SUCCESS
-      */
+      let uploadedUnder = "Main Label";
 
-      if (isAdmin) {
-        alert(
-          "Song Uploaded Successfully ✅"
-        );
-
-        router.push(
-          "/dashboard"
-        );
-      } else {
-        const selectedName =
-          selectedSubLabelId === "main"
-            ? labelName
-            : subLabels.find(
-                (item) =>
-                  item.id ===
-                  Number(
-                    selectedSubLabelId
-                  )
-              )?.sub_label_name;
-
-        alert(
-          `Song Uploaded Successfully ✅\n\nCustomer: ${
-            customer?.customer_name ||
-            ""
-          }\nLabel: ${
-            selectedName ||
-            labelName ||
-            "Main Customer Label"
-          }`
-        );
-
-        router.push(
-          "/customer-dashboard"
-        );
+      if (selectedSubLabel) {
+        uploadedUnder = selectedSubLabel.sub_label_name;
+      } else if (labelName) {
+        uploadedUnder = labelName;
       }
 
-      /*
-        FORM RESET
-      */
+      alert(
+        `Song uploaded successfully ✅\n\nUploaded under: ${uploadedUnder}`
+      );
 
       setSongTitle("");
       setArtistName("");
       setAlbumName("");
       setSingerName("");
       setComposer("");
+      setMusicDirector("");
       setLyricist("");
       setGenre("");
       setLanguage("");
@@ -756,26 +367,22 @@ export default function UploadPage() {
       setAudio(null);
       setSelectedSubLabelId("main");
 
-      const fileInputs =
-        document.querySelectorAll(
-          'input[type="file"]'
-        ) as NodeListOf<HTMLInputElement>;
+      const coverInput = document.getElementById(
+        "cover"
+      ) as HTMLInputElement | null;
 
-      fileInputs.forEach(
-        (input) => {
-          input.value = "";
-        }
-      );
+      const audioInput = document.getElementById(
+        "audio"
+      ) as HTMLInputElement | null;
+
+      if (coverInput) coverInput.value = "";
+      if (audioInput) audioInput.value = "";
     } catch (error: any) {
-      console.error(
-        "Upload error:",
-        error
-      );
+      console.error("Upload error:", error);
 
       alert(
-        error?.message
-          ? `Upload Failed ❌\n\n${error.message}`
-          : "Upload Failed ❌"
+        error?.message ||
+          "Upload failed. Please try again."
       );
     } finally {
       setLoading(false);
@@ -784,384 +391,278 @@ export default function UploadPage() {
 
   if (checkingAuth) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "#111827",
-          color: "white",
-          display: "flex",
-          justifyContent:
-            "center",
-          alignItems: "center",
-          fontSize: "22px",
-        }}
-      >
-        Checking Login... 🔐
-      </main>
+      <div style={pageStyle}>
+        <div style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>
+            Checking authentication...
+          </h2>
+        </div>
+      </div>
     );
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#111827",
-        color: "white",
-        padding: "40px",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "650px",
-          margin: "0 auto",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems: "center",
-            marginBottom: "30px",
-          }}
-        >
-          <h1
-            style={{
-              color: "#22c55e",
-              margin: 0,
-            }}
-          >
-            🎵 Upload Song
-          </h1>
-
-          <button
-            type="button"
-            onClick={() =>
-              router.push(
-                isAdmin
-                  ? "/dashboard"
-                  : "/customer-dashboard"
-              )
-            }
-            style={{
-              background: "#334155",
-              color: "white",
-              border: "none",
-              padding: "10px 15px",
-              borderRadius: "8px",
-              cursor: "pointer",
-            }}
-          >
-            ← Dashboard
-          </button>
+    <div style={pageStyle}>
+      <div style={cardStyle}>
+        <div style={headerStyle}>
+          <div>
+            <h1 style={titleStyle}>Upload Song</h1>
+            <p style={subtitleStyle}>
+              Add your music content to SD Music Distribution
+            </p>
+          </div>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "15px",
-            background: "#1e293b",
-            padding: "25px",
-            borderRadius: "14px",
-          }}
-        >
-          {/* CUSTOMER INFO */}
-
-          {!isAdmin && (
-            <div
-              style={{
-                background: "#0f172a",
-                border:
-                  "1px solid #334155",
-                borderRadius: "10px",
-                padding: "15px",
-                marginBottom: "5px",
-              }}
-            >
-              <div
-                style={{
-                  color: "#94a3b8",
-                  fontSize: "11px",
-                  marginBottom: "5px",
-                }}
-              >
-                UPLOADING FOR
-              </div>
-
-              <div
-                style={{
-                  color: "#fff",
-                  fontWeight: "700",
-                  fontSize: "15px",
-                }}
-              >
-                {customerName ||
-                  "Customer"}
-              </div>
-
-              <div
-                style={{
-                  color: "#94a3b8",
-                  fontSize: "12px",
-                  marginTop: "5px",
-                }}
-              >
-                Label:{" "}
-                {labelName ||
-                  "Label Name Not Set"}
-              </div>
-            </div>
-          )}
-
-          {/* LABEL SELECTION */}
-
-          {!isAdmin && (
+        {!isAdmin && (
+          <div style={customerBoxStyle}>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  color: "#cbd5e1",
-                  fontSize: "14px",
-                  marginBottom: "7px",
-                  fontWeight: "600",
-                }}
-              >
-                Select Label
+              <strong>Customer:</strong>{" "}
+              {customerName || "Customer"}
+            </div>
+
+            <div style={{ marginTop: 5 }}>
+              <strong>Main Label:</strong>{" "}
+              {labelName || "Main Customer Label"}
+            </div>
+
+            <div style={{ marginTop: 15 }}>
+              <label style={labelStyle}>
+                Upload Under
               </label>
 
               <select
-                value={
-                  selectedSubLabelId
-                }
+                value={selectedSubLabelId}
                 onChange={(e) =>
-                  setSelectedSubLabelId(
-                    e.target.value
-                  )
+                  setSelectedSubLabelId(e.target.value)
                 }
-                style={{
-                  width: "100%",
-                  boxSizing:
-                    "border-box",
-                  background: "#0f172a",
-                  color: "#fff",
-                  border:
-                    "1px solid #334155",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  outline: "none",
-                  fontSize: "14px",
-                }}
+                style={inputStyle}
               >
                 <option value="main">
                   Main Label:{" "}
-                  {labelName ||
-                    "Main Customer Label"}
+                  {labelName || "Main Customer Label"}
                 </option>
 
-                {subLabels.map(
-                  (subLabel) => (
-                    <option
-                      key={
-                        subLabel.id
-                      }
-                      value={
-                        subLabel.id
-                      }
-                    >
-                      Sub Label:{" "}
-                      {
-                        subLabel.sub_label_name
-                      }
-                    </option>
-                  )
-                )}
+                {subLabels.map((subLabel) => (
+                  <option
+                    key={subLabel.id}
+                    value={subLabel.id}
+                  >
+                    Sub Label: {subLabel.sub_label_name}
+                  </option>
+                ))}
               </select>
 
-              <div
-                style={{
-                  color: "#94a3b8",
-                  fontSize: "12px",
-                  marginTop: "7px",
-                }}
-              >
-                Main Label select karne par
-                song customer ke main label
-                par upload hoga. Sub Label
-                select karne par song us Sub
-                Label me bhi show hoga.
-              </div>
+              <p style={helpTextStyle}>
+                Main Label select करने पर song आपके Main Label
+                में upload होगा. Sub Label select करने पर song
+                उस Sub Label में भी दिखाई देगा.
+              </p>
             </div>
-          )}
+          </div>
+        )}
 
-          <input
-            placeholder="Song Title"
-            value={songTitle}
-            onChange={(e) =>
-              setSongTitle(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+        <form onSubmit={handleSubmit}>
+          <div style={gridStyle}>
+            <div>
+              <label style={labelStyle}>
+                Song Title *
+              </label>
 
-          <input
-            placeholder="Artist Name"
-            value={artistName}
-            onChange={(e) =>
-              setArtistName(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+              <input
+                placeholder="Song Title"
+                value={songTitle}
+                onChange={(e) =>
+                  setSongTitle(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <input
-            placeholder="Album Name"
-            value={albumName}
-            onChange={(e) =>
-              setAlbumName(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+            <div>
+              <label style={labelStyle}>
+                Artist Name *
+              </label>
 
-          <input
-            placeholder="Singer Name"
-            value={singerName}
-            onChange={(e) =>
-              setSingerName(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+              <input
+                placeholder="Artist Name"
+                value={artistName}
+                onChange={(e) =>
+                  setArtistName(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <input
-            placeholder="Composer"
-            value={composer}
-            onChange={(e) =>
-              setComposer(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+            <div>
+              <label style={labelStyle}>
+                Album Name
+              </label>
 
-          <input
-            placeholder="Lyricist"
-            value={lyricist}
-            onChange={(e) =>
-              setLyricist(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+              <input
+                placeholder="Album Name"
+                value={albumName}
+                onChange={(e) =>
+                  setAlbumName(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <input
-            placeholder="Genre"
-            value={genre}
-            onChange={(e) =>
-              setGenre(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+            <div>
+              <label style={labelStyle}>
+                Singer
+              </label>
 
-          <input
-            placeholder="Language"
-            value={language}
-            onChange={(e) =>
-              setLanguage(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+              <input
+                placeholder="Singer Name"
+                value={singerName}
+                onChange={(e) =>
+                  setSingerName(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <label
-            style={{
-              color: "#cbd5e1",
-              fontSize: "14px",
-            }}
-          >
-            Release Date
-          </label>
+            <div>
+              <label style={labelStyle}>
+                Composer
+              </label>
 
-          <input
-            type="date"
-            value={releaseDate}
-            onChange={(e) =>
-              setReleaseDate(
-                e.target.value
-              )
-            }
-            style={inputStyle}
-          />
+              <input
+                placeholder="Composer"
+                value={composer}
+                onChange={(e) =>
+                  setComposer(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <label
-            style={{
-              color: "#cbd5e1",
-              fontSize: "14px",
-            }}
-          >
-            Cover Image
-          </label>
+            <div>
+              <label style={labelStyle}>
+                Music Director
+              </label>
 
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) =>
-              setCover(
-                e.target.files?.[0] ||
-                  null
-              )
-            }
-            style={fileInputStyle}
-          />
+              <input
+                placeholder="Music Director"
+                value={musicDirector}
+                onChange={(e) =>
+                  setMusicDirector(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <label
-            style={{
-              color: "#cbd5e1",
-              fontSize: "14px",
-            }}
-          >
-            Audio File
-          </label>
+            <div>
+              <label style={labelStyle}>
+                Lyricist
+              </label>
 
-          <input
-            type="file"
-            accept="audio/*,.wav,.mp3"
-            onChange={(e) =>
-              setAudio(
-                e.target.files?.[0] ||
-                  null
-              )
-            }
-            style={fileInputStyle}
-          />
+              <input
+                placeholder="Lyricist"
+                value={lyricist}
+                onChange={(e) =>
+                  setLyricist(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Genre
+              </label>
+
+              <input
+                placeholder="Genre"
+                value={genre}
+                onChange={(e) =>
+                  setGenre(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Language
+              </label>
+
+              <input
+                placeholder="Language"
+                value={language}
+                onChange={(e) =>
+                  setLanguage(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Release Date
+              </label>
+
+              <input
+                type="date"
+                value={releaseDate}
+                onChange={(e) =>
+                  setReleaseDate(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Cover Image *
+              </label>
+
+              <input
+                id="cover"
+                type="file"
+                accept="image/*"
+                onChange={(e) =>
+                  setCover(
+                    e.target.files?.[0] || null
+                  )
+                }
+                style={fileInputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Audio File *
+              </label>
+
+              <input
+                id="audio"
+                type="file"
+                accept="audio/*,.wav,.mp3"
+                onChange={(e) =>
+                  setAudio(
+                    e.target.files?.[0] || null
+                  )
+                }
+                style={fileInputStyle}
+              />
+
+              <p style={helpTextStyle}>
+                WAV / MP3 supported
+              </p>
+            </div>
+          </div>
 
           <button
             type="submit"
             disabled={loading}
             style={{
-              background: loading
-                ? "#6b7280"
-                : "#22c55e",
-              color: "#fff",
-              border: "none",
-              padding: "13px",
-              borderRadius: "8px",
+              ...buttonStyle,
+              opacity: loading ? 0.6 : 1,
               cursor: loading
                 ? "not-allowed"
                 : "pointer",
-              fontWeight: "bold",
-              fontSize: "15px",
-              marginTop: "10px",
             }}
           >
             {loading
@@ -1170,25 +671,107 @@ export default function UploadPage() {
           </button>
         </form>
       </div>
-    </main>
+    </div>
   );
 }
 
-const inputStyle = {
-  background: "#0f172a",
-  color: "white",
-  border: "1px solid #334155",
-  padding: "12px",
-  borderRadius: "8px",
-  outline: "none",
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: "#0b0f19",
+  padding: "40px 20px",
+  color: "#ffffff",
+};
+
+const cardStyle: React.CSSProperties = {
+  maxWidth: "1100px",
+  margin: "0 auto",
+  background: "#111827",
+  border: "1px solid #1f2937",
+  borderRadius: "18px",
+  padding: "30px",
+  boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+};
+
+const headerStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "25px",
+};
+
+const titleStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: "30px",
+  fontWeight: 700,
+};
+
+const subtitleStyle: React.CSSProperties = {
+  marginTop: "7px",
+  color: "#9ca3af",
   fontSize: "14px",
 };
 
-const fileInputStyle = {
+const customerBoxStyle: React.CSSProperties = {
   background: "#0f172a",
-  color: "#cbd5e1",
-  border: "1px solid #334155",
-  padding: "10px",
-  borderRadius: "8px",
+  border: "1px solid #263244",
+  borderRadius: "12px",
+  padding: "18px",
+  marginBottom: "25px",
+  color: "#dbeafe",
+};
+
+const gridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns:
+    "repeat(auto-fit, minmax(280px, 1fr))",
+  gap: "18px",
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  marginBottom: "8px",
   fontSize: "14px",
+  fontWeight: 600,
+  color: "#d1d5db",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "10px",
+  border: "1px solid #374151",
+  background: "#0b1220",
+  color: "#ffffff",
+  outline: "none",
+  fontSize: "14px",
+  boxSizing: "border-box",
+};
+
+const fileInputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px",
+  borderRadius: "10px",
+  border: "1px solid #374151",
+  background: "#0b1220",
+  color: "#d1d5db",
+  boxSizing: "border-box",
+};
+
+const helpTextStyle: React.CSSProperties = {
+  marginTop: "7px",
+  marginBottom: 0,
+  color: "#9ca3af",
+  fontSize: "12px",
+};
+
+const buttonStyle: React.CSSProperties = {
+  width: "100%",
+  marginTop: "28px",
+  padding: "14px 20px",
+  border: "none",
+  borderRadius: "10px",
+  background: "#2563eb",
+  color: "#ffffff",
+  fontSize: "16px",
+  fontWeight: 700,
 };
