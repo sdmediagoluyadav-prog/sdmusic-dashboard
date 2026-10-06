@@ -11,6 +11,7 @@ type Song = {
   album_name: string | null;
   singer_name: string | null;
   composer: string | null;
+  music_director: string | null;
   lyricist: string | null;
   genre: string | null;
   language: string | null;
@@ -19,8 +20,14 @@ type Song = {
   audio_url: string | null;
   status: string | null;
   rejection_reason: string | null;
+
   customer_name: string | null;
   label_name: string | null;
+
+  label_type: string | null;
+  upload_label: string | null;
+  sub_label_name: string | null;
+
   signed_cover_url?: string | null;
   signed_audio_url?: string | null;
 };
@@ -33,6 +40,12 @@ type Stats = {
   artists: number;
   albums: number;
   customers: number;
+};
+
+type SubLabelRow = {
+  id: number;
+  customer_id: number;
+  sub_label_name: string | null;
 };
 
 export default function DashboardPage() {
@@ -53,7 +66,8 @@ export default function DashboardPage() {
     customers: 0,
   });
 
-  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [selectedSong, setSelectedSong] =
+    useState<Song | null>(null);
 
   const [downloadLoading, setDownloadLoading] = useState<
     "audio" | "cover" | null
@@ -153,7 +167,9 @@ export default function DashboardPage() {
         const separator = path.includes("?") ? "&" : "?";
 
         const downloadUrl =
-          `${path}${separator}download=${encodeURIComponent(filename)}`;
+          `${path}${separator}download=${encodeURIComponent(
+            filename
+          )}`;
 
         const link = document.createElement("a");
 
@@ -193,7 +209,9 @@ export default function DashboardPage() {
         : "?";
 
       const downloadUrl =
-        `${data.signedUrl}${separator}download=${encodeURIComponent(filename)}`;
+        `${data.signedUrl}${separator}download=${encodeURIComponent(
+          filename
+        )}`;
 
       const link = document.createElement("a");
 
@@ -278,7 +296,10 @@ export default function DashboardPage() {
         );
       }
 
+      // =====================================================
       // TOTAL SONGS
+      // =====================================================
+
       const { count: totalSongs } = await supabase
         .from("songs")
         .select("*", {
@@ -286,7 +307,10 @@ export default function DashboardPage() {
           head: true,
         });
 
+      // =====================================================
       // PENDING
+      // =====================================================
+
       const { count: pending } = await supabase
         .from("songs")
         .select("*", {
@@ -295,7 +319,10 @@ export default function DashboardPage() {
         })
         .eq("status", "Pending");
 
+      // =====================================================
       // APPROVED
+      // =====================================================
+
       const { count: approved } = await supabase
         .from("songs")
         .select("*", {
@@ -304,7 +331,10 @@ export default function DashboardPage() {
         })
         .eq("status", "Approved");
 
+      // =====================================================
       // REJECTED
+      // =====================================================
+
       const { count: rejected } = await supabase
         .from("songs")
         .select("*", {
@@ -313,7 +343,10 @@ export default function DashboardPage() {
         })
         .eq("status", "Rejected");
 
+      // =====================================================
       // ARTISTS
+      // =====================================================
+
       const { data: artistRows } = await supabase
         .from("songs")
         .select("artist_name");
@@ -324,7 +357,10 @@ export default function DashboardPage() {
           .filter(Boolean)
       );
 
+      // =====================================================
       // ALBUMS
+      // =====================================================
+
       const { data: albumRows } = await supabase
         .from("songs")
         .select("album_name");
@@ -335,7 +371,10 @@ export default function DashboardPage() {
           .filter(Boolean)
       );
 
+      // =====================================================
       // CUSTOMERS
+      // =====================================================
+
       const { count: customers } = await supabase
         .from("customers")
         .select("*", {
@@ -359,6 +398,7 @@ export default function DashboardPage() {
           album_name,
           singer_name,
           composer,
+          music_director,
           lyricist,
           genre,
           language,
@@ -381,12 +421,16 @@ export default function DashboardPage() {
       }
 
       // =====================================================
-      // CUSTOMER SONG MAPPING
+      // SONG IDS
       // =====================================================
 
       const songIds = (latestSongs || []).map(
         (song: any) => song.id
       );
+
+      // =====================================================
+      // CUSTOMER SONG MAPPING
+      // =====================================================
 
       let customerSongRows: any[] = [];
 
@@ -407,6 +451,31 @@ export default function DashboardPage() {
         }
 
         customerSongRows = data || [];
+      }
+
+      // =====================================================
+      // SUB LABEL SONG MAPPING
+      // =====================================================
+
+      let subLabelSongRows: any[] = [];
+
+      if (songIds.length > 0) {
+        const { data, error } = await supabase
+          .from("sub_label_songs")
+          .select(`
+            song_id,
+            sub_label_id
+          `)
+          .in("song_id", songIds);
+
+        if (error) {
+          console.error(
+            "Sub label songs error:",
+            error
+          );
+        }
+
+        subLabelSongRows = data || [];
       }
 
       // =====================================================
@@ -441,12 +510,43 @@ export default function DashboardPage() {
       }
 
       // =====================================================
+      // SUB LABEL IDS
+      // =====================================================
+
+      const subLabelIds = subLabelSongRows
+        .map((item) => item.sub_label_id)
+        .filter(Boolean);
+
+      let subLabelRows: SubLabelRow[] = [];
+
+      if (subLabelIds.length > 0) {
+        const { data, error } = await supabase
+          .from("sub_labels")
+          .select(`
+            id,
+            customer_id,
+            sub_label_name
+          `)
+          .in("id", subLabelIds);
+
+        if (error) {
+          console.error(
+            "Sub labels fetch error:",
+            error
+          );
+        }
+
+        subLabelRows = data || [];
+      }
+
+      // =====================================================
       // MAP SONG DATA
       // =====================================================
 
       const finalSongs: Song[] = await Promise.all(
         (latestSongs || []).map(
           async (song: any) => {
+            // Customer mapping
             const customerSong =
               customerSongRows.find(
                 (item) =>
@@ -460,6 +560,49 @@ export default function DashboardPage() {
                   customerSong?.customer_id
               );
 
+            // Sub label mapping
+            const subLabelSong =
+              subLabelSongRows.find(
+                (item) =>
+                  item.song_id === song.id
+              );
+
+            const subLabel =
+              subLabelRows.find(
+                (item) =>
+                  item.id ===
+                  subLabelSong?.sub_label_id
+              );
+
+            // Label information
+            let labelType: string | null =
+              null;
+
+            let uploadLabel: string | null =
+              null;
+
+            let subLabelName: string | null =
+              null;
+
+            if (subLabel) {
+              labelType = "Sub Label";
+
+              uploadLabel =
+                subLabel.sub_label_name || null;
+
+              subLabelName =
+                subLabel.sub_label_name || null;
+            } else if (customer) {
+              labelType = "Main Label";
+
+              uploadLabel =
+                customer.label_name ||
+                customer.customer_name ||
+                customer.name ||
+                null;
+            }
+
+            // Signed URLs
             const signedCoverUrl =
               await createSignedUrl(
                 song.cover_url
@@ -487,6 +630,9 @@ export default function DashboardPage() {
 
               composer:
                 song.composer,
+
+              music_director:
+                song.music_director,
 
               lyricist:
                 song.lyricist,
@@ -520,6 +666,15 @@ export default function DashboardPage() {
               label_name:
                 customer?.label_name ||
                 null,
+
+              label_type:
+                labelType,
+
+              upload_label:
+                uploadLabel,
+
+              sub_label_name:
+                subLabelName,
 
               signed_cover_url:
                 signedCoverUrl,
@@ -596,6 +751,7 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error(error);
+
       alert(
         "Approve karte waqt error aaya."
       );
@@ -645,6 +801,7 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error(error);
+
       alert(
         "Reject karte waqt error aaya."
       );
@@ -685,6 +842,7 @@ export default function DashboardPage() {
       await loadDashboard();
     } catch (error) {
       console.error(error);
+
       alert(
         "Delete karte waqt error aaya."
       );
@@ -720,6 +878,24 @@ export default function DashboardPage() {
     }
 
     return "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20";
+  }
+
+  // =========================================================
+  // LABEL BADGE
+  // =========================================================
+
+  function getLabelClass(
+    labelType: string | null
+  ) {
+    if (labelType === "Sub Label") {
+      return "bg-purple-500/15 text-purple-300 border border-purple-500/20";
+    }
+
+    if (labelType === "Main Label") {
+      return "bg-blue-500/15 text-blue-300 border border-blue-500/20";
+    }
+
+    return "bg-white/5 text-white/40 border border-white/10";
   }
 
   // =========================================================
@@ -779,17 +955,21 @@ export default function DashboardPage() {
         <aside className="hidden lg:flex w-[260px] shrink-0 border-r border-white/10 bg-[#0d0d10] flex-col">
 
           <div className="p-6 border-b border-white/10">
+
             <div className="flex items-center gap-3">
 
               <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center overflow-hidden">
+
                 <img
                   src="/sd-logo.png"
                   alt="SD Media"
                   className="w-full h-full object-contain"
                 />
+
               </div>
 
               <div>
+
                 <h1 className="font-bold text-lg">
                   SD Music
                 </h1>
@@ -797,9 +977,11 @@ export default function DashboardPage() {
                 <p className="text-xs text-white/40">
                   Admin Panel
                 </p>
+
               </div>
 
             </div>
+
           </div>
 
           <nav className="p-4 space-y-2 flex-1">
@@ -874,6 +1056,7 @@ export default function DashboardPage() {
           </nav>
 
           <div className="p-4 border-t border-white/10">
+
             <button
               type="button"
               onClick={logout}
@@ -881,6 +1064,7 @@ export default function DashboardPage() {
             >
               🚪 Logout
             </button>
+
           </div>
 
         </aside>
@@ -898,6 +1082,7 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between gap-4">
 
                 <div>
+
                   <p className="text-xs text-white/40 mb-1">
                     Admin Dashboard
                   </p>
@@ -905,6 +1090,7 @@ export default function DashboardPage() {
                   <h2 className="text-xl sm:text-2xl font-bold">
                     Welcome back 👋
                   </h2>
+
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -945,63 +1131,83 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
                 <div className="flex items-center justify-between mb-4">
+
                   <span className="text-sm text-white/50">
                     Total Songs
                   </span>
+
                   <span className="text-xl">
                     🎵
                   </span>
+
                 </div>
 
                 <p className="text-3xl font-bold">
                   {stats.totalSongs}
                 </p>
+
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
                 <div className="flex items-center justify-between mb-4">
+
                   <span className="text-sm text-white/50">
                     Pending
                   </span>
+
                   <span className="text-xl">
                     ⏳
                   </span>
+
                 </div>
 
                 <p className="text-3xl font-bold text-yellow-400">
                   {stats.pending}
                 </p>
+
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
                 <div className="flex items-center justify-between mb-4">
+
                   <span className="text-sm text-white/50">
                     Approved
                   </span>
+
                   <span className="text-xl">
                     ✅
                   </span>
+
                 </div>
 
                 <p className="text-3xl font-bold text-emerald-400">
                   {stats.approved}
                 </p>
+
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+
                 <div className="flex items-center justify-between mb-4">
+
                   <span className="text-sm text-white/50">
                     Rejected
                   </span>
+
                   <span className="text-xl">
                     ❌
                   </span>
+
                 </div>
 
                 <p className="text-3xl font-bold text-red-400">
                   {stats.rejected}
                 </p>
+
               </div>
 
             </div>
@@ -1011,6 +1217,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
                 <p className="text-xs text-white/40 mb-1">
                   Artists
                 </p>
@@ -1018,9 +1225,11 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   {stats.artists}
                 </p>
+
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
                 <p className="text-xs text-white/40 mb-1">
                   Albums
                 </p>
@@ -1028,9 +1237,11 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   {stats.albums}
                 </p>
+
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
                 <p className="text-xs text-white/40 mb-1">
                   Customers
                 </p>
@@ -1038,9 +1249,11 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   {stats.customers}
                 </p>
+
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+
                 <p className="text-xs text-white/40 mb-1">
                   Dashboard
                 </p>
@@ -1048,6 +1261,7 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   Active
                 </p>
+
               </div>
 
             </div>
@@ -1061,6 +1275,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between gap-4">
 
                   <div>
+
                     <h3 className="text-lg font-bold">
                       Recent Songs
                     </h3>
@@ -1068,6 +1283,7 @@ export default function DashboardPage() {
                     <p className="text-sm text-white/40 mt-1">
                       Latest uploaded music
                     </p>
+
                   </div>
 
                   <span className="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/50">
@@ -1079,7 +1295,9 @@ export default function DashboardPage() {
               </div>
 
               {songs.length === 0 ? (
+
                 <div className="p-10 text-center">
+
                   <div className="text-4xl mb-3">
                     🎵
                   </div>
@@ -1087,13 +1305,17 @@ export default function DashboardPage() {
                   <p className="text-white/50">
                     Abhi koi song available nahi hai.
                   </p>
+
                 </div>
+
               ) : (
+
                 <div className="overflow-x-auto">
 
-                  <table className="w-full min-w-[1100px]">
+                  <table className="w-full min-w-[1250px]">
 
                     <thead>
+
                       <tr className="border-b border-white/10 text-left">
 
                         <th className="px-5 py-4 text-xs font-medium text-white/40">
@@ -1133,6 +1355,7 @@ export default function DashboardPage() {
                         </th>
 
                       </tr>
+
                     </thead>
 
                     <tbody>
@@ -1151,6 +1374,7 @@ export default function DashboardPage() {
                             <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/5 border border-white/10">
 
                               {song.signed_cover_url ? (
+
                                 <img
                                   src={song.signed_cover_url}
                                   alt={
@@ -1159,10 +1383,13 @@ export default function DashboardPage() {
                                   }
                                   className="w-full h-full object-cover"
                                 />
+
                               ) : (
+
                                 <div className="w-full h-full flex items-center justify-center text-xl">
                                   🎵
                                 </div>
+
                               )}
 
                             </div>
@@ -1220,18 +1447,22 @@ export default function DashboardPage() {
                           <td className="px-5 py-4">
 
                             {song.rejection_reason ? (
+
                               <p className="max-w-[220px] text-xs text-red-300/80">
                                 {song.rejection_reason}
                               </p>
+
                             ) : (
+
                               <span className="text-xs text-white/30">
                                 —
                               </span>
+
                             )}
 
                           </td>
 
-                          {/* CUSTOMER */}
+                          {/* CUSTOMER / LABEL */}
 
                           <td className="px-5 py-4">
 
@@ -1242,10 +1473,25 @@ export default function DashboardPage() {
                                   "—"}
                               </p>
 
-                              {song.label_name && (
-                                <p className="text-xs text-white/40 mt-1">
-                                  {song.label_name}
-                                </p>
+                              {song.upload_label && (
+
+                                <div className="mt-1.5">
+
+                                  <span
+                                    className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-medium ${getLabelClass(
+                                      song.label_type
+                                    )}`}
+                                  >
+                                    {song.label_type ||
+                                      "Label"}
+                                  </span>
+
+                                  <p className="text-xs text-white/50 mt-1">
+                                    {song.upload_label}
+                                  </p>
+
+                                </div>
+
                               )}
 
                             </div>
@@ -1257,6 +1503,7 @@ export default function DashboardPage() {
                           <td className="px-5 py-4">
 
                             {song.signed_audio_url ? (
+
                               <audio
                                 controls
                                 preload="none"
@@ -1265,10 +1512,13 @@ export default function DashboardPage() {
                                   song.signed_audio_url
                                 }
                               />
+
                             ) : (
+
                               <span className="text-xs text-white/30">
                                 Audio unavailable
                               </span>
+
                             )}
 
                           </td>
@@ -1350,6 +1600,7 @@ export default function DashboardPage() {
                   </table>
 
                 </div>
+
               )}
 
             </div>
@@ -1421,6 +1672,7 @@ export default function DashboardPage() {
                   <div className="aspect-square rounded-2xl overflow-hidden bg-white/5 border border-white/10">
 
                     {selectedSong.signed_cover_url ? (
+
                       <img
                         src={
                           selectedSong.signed_cover_url
@@ -1431,10 +1683,13 @@ export default function DashboardPage() {
                         }
                         className="w-full h-full object-cover"
                       />
+
                     ) : (
+
                       <div className="w-full h-full flex items-center justify-center text-5xl">
                         🎵
                       </div>
+
                     )}
 
                   </div>
@@ -1468,9 +1723,11 @@ export default function DashboardPage() {
                     }}
                     className="w-full mt-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm font-medium disabled:opacity-50"
                   >
+
                     {downloadLoading === "cover"
                       ? "Downloading..."
                       : "⬇️ Download Poster"}
+
                   </button>
 
                 </div>
@@ -1557,6 +1814,17 @@ export default function DashboardPage() {
 
                       <div>
                         <p className="text-xs text-white/40 mb-1">
+                          Music Director
+                        </p>
+
+                        <p className="text-sm">
+                          {selectedSong.music_director ||
+                            "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/40 mb-1">
                           Lyricist
                         </p>
 
@@ -1613,13 +1881,48 @@ export default function DashboardPage() {
 
                       <div>
                         <p className="text-xs text-white/40 mb-1">
-                          Label
+                          Main Label
                         </p>
 
                         <p className="text-sm">
                           {selectedSong.label_name ||
                             "—"}
                         </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/40 mb-1">
+                          Label Type
+                        </p>
+
+                        <span
+                          className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getLabelClass(
+                            selectedSong.label_type
+                          )}`}
+                        >
+                          {selectedSong.label_type ||
+                            "—"}
+                        </span>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <p className="text-xs text-white/40 mb-1">
+                          Uploaded Under
+                        </p>
+
+                        <p className="text-sm font-semibold">
+                          {selectedSong.upload_label ||
+                            "—"}
+                        </p>
+
+                        {selectedSong.sub_label_name && (
+                          <p className="text-xs text-purple-300 mt-1">
+                            Sub Label:{" "}
+                            {
+                              selectedSong.sub_label_name
+                            }
+                          </p>
+                        )}
                       </div>
 
                     </div>
@@ -1657,6 +1960,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between gap-4 mb-5">
 
                   <div>
+
                     <h3 className="font-semibold">
                       Music Information
                     </h3>
@@ -1664,6 +1968,7 @@ export default function DashboardPage() {
                     <p className="text-xs text-white/40 mt-1">
                       Complete metadata of this song
                     </p>
+
                   </div>
 
                   <span className="text-xl">
@@ -1731,6 +2036,17 @@ export default function DashboardPage() {
 
                   <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
                     <p className="text-xs text-white/40 mb-1">
+                      Music Director
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.music_director ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
                       Lyricist
                     </p>
 
@@ -1787,7 +2103,7 @@ export default function DashboardPage() {
 
                   <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
                     <p className="text-xs text-white/40 mb-1">
-                      Label
+                      Main Label
                     </p>
 
                     <p className="text-sm font-medium">
@@ -1795,6 +2111,46 @@ export default function DashboardPage() {
                         "—"}
                     </p>
                   </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Label Type
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.label_type ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                    <p className="text-xs text-white/40 mb-1">
+                      Uploaded Under
+                    </p>
+
+                    <p className="text-sm font-medium">
+                      {selectedSong.upload_label ||
+                        "—"}
+                    </p>
+                  </div>
+
+                  {selectedSong.sub_label_name && (
+
+                    <div className="rounded-xl bg-purple-500/[0.05] border border-purple-500/10 p-4">
+
+                      <p className="text-xs text-purple-300/60 mb-1">
+                        Sub Label
+                      </p>
+
+                      <p className="text-sm font-medium text-purple-300">
+                        {
+                          selectedSong.sub_label_name
+                        }
+                      </p>
+
+                    </div>
+
+                  )}
 
                   <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
                     <p className="text-xs text-white/40 mb-1">
@@ -1836,6 +2192,7 @@ export default function DashboardPage() {
                 </div>
 
                 {selectedSong.signed_audio_url ? (
+
                   <audio
                     controls
                     className="w-full"
@@ -1843,10 +2200,13 @@ export default function DashboardPage() {
                       selectedSong.signed_audio_url
                     }
                   />
+
                 ) : (
+
                   <div className="rounded-xl bg-white/5 p-4 text-sm text-white/40">
                     Audio file available nahi hai.
                   </div>
+
                 )}
 
                 {/* DOWNLOAD AUDIO */}
@@ -1878,9 +2238,11 @@ export default function DashboardPage() {
                   }}
                   className="w-full mt-4 px-4 py-3 rounded-xl bg-white text-black hover:bg-white/90 transition text-sm font-semibold disabled:opacity-50"
                 >
+
                   {downloadLoading === "audio"
                     ? "Downloading..."
                     : "⬇️ Download Audio"}
+
                 </button>
 
               </div>
