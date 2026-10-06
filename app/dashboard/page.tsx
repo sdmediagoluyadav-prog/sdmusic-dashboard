@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -34,7 +35,6 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
   const [songs, setSongs] = useState<Song[]>([]);
 
   const [stats, setStats] = useState<Stats>({
@@ -47,11 +47,10 @@ export default function DashboardPage() {
     customers: 0,
   });
 
-  const [selectedSong, setSelectedSong] =
-    useState<Song | null>(null);
-
-  const [downloadLoading, setDownloadLoading] =
-    useState<"audio" | "cover" | null>(null);
+  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [downloadLoading, setDownloadLoading] = useState<
+    "audio" | "cover" | null
+  >(null);
 
   // =========================================================
   // SIGNED URL
@@ -62,11 +61,7 @@ export default function DashboardPage() {
   ): Promise<string | null> {
     if (!path) return null;
 
-    // Agar database me already direct URL saved hai
-    if (
-      path.startsWith("http://") ||
-      path.startsWith("https://")
-    ) {
+    if (path.startsWith("http://") || path.startsWith("https://")) {
       return path;
     }
 
@@ -105,9 +100,7 @@ export default function DashboardPage() {
     if (!path) return fallback;
 
     const cleanPath = path.split("?")[0];
-
-    const lastPart =
-      cleanPath.split("/").pop() || "";
+    const lastPart = cleanPath.split("/").pop() || "";
 
     if (!lastPart.includes(".")) {
       return fallback;
@@ -137,33 +130,20 @@ export default function DashboardPage() {
           ? "Audio file nahi mila."
           : "Poster file nahi mila."
       );
-
       return;
     }
 
     try {
       setDownloadLoading(type);
 
-      // -----------------------------------------------------
       // DIRECT URL
-      // -----------------------------------------------------
-
-      if (
-        path.startsWith("http://") ||
-        path.startsWith("https://")
-      ) {
-        const separator = path.includes("?")
-          ? "&"
-          : "?";
+      if (path.startsWith("http://") || path.startsWith("https://")) {
+        const separator = path.includes("?") ? "&" : "?";
 
         const downloadUrl =
-          `${path}${separator}download=${encodeURIComponent(
-            filename
-          )}`;
+          `${path}${separator}download=${encodeURIComponent(filename)}`;
 
-        const link =
-          document.createElement("a");
-
+        const link = document.createElement("a");
         link.href = downloadUrl;
         link.download = filename;
         link.target = "_blank";
@@ -176,20 +156,13 @@ export default function DashboardPage() {
         return;
       }
 
-      // -----------------------------------------------------
       // PRIVATE SUPABASE STORAGE
-      // -----------------------------------------------------
-
-      const { data, error } =
-        await supabase.storage
-          .from("songs")
-          .createSignedUrl(path, 60 * 60);
+      const { data, error } = await supabase.storage
+        .from("songs")
+        .createSignedUrl(path, 60 * 60);
 
       if (error || !data?.signedUrl) {
-        console.error(
-          "Signed download URL error:",
-          error
-        );
+        console.error("Signed download URL error:", error);
 
         alert(
           type === "audio"
@@ -200,20 +173,12 @@ export default function DashboardPage() {
         return;
       }
 
-      // Signed URL ke saath download filename
-      const separator =
-        data.signedUrl.includes("?")
-          ? "&"
-          : "?";
+      const separator = data.signedUrl.includes("?") ? "&" : "?";
 
       const downloadUrl =
-        `${data.signedUrl}${separator}download=${encodeURIComponent(
-          filename
-        )}`;
+        `${data.signedUrl}${separator}download=${encodeURIComponent(filename)}`;
 
-      const link =
-        document.createElement("a");
-
+      const link = document.createElement("a");
       link.href = downloadUrl;
       link.download = filename;
       link.target = "_blank";
@@ -223,10 +188,7 @@ export default function DashboardPage() {
       link.click();
       link.remove();
     } catch (error) {
-      console.error(
-        "Download error:",
-        error
-      );
+      console.error("Download error:", error);
 
       alert(
         type === "audio"
@@ -242,18 +204,13 @@ export default function DashboardPage() {
   // LOAD DASHBOARD
   // =========================================================
 
-  async function loadDashboard(
-    showRefresh = false
-  ) {
+  async function loadDashboard(showRefresh = false) {
     try {
       if (showRefresh) {
         setRefreshing(true);
       }
 
-      // -----------------------------------------------------
       // AUTH CHECK
-      // -----------------------------------------------------
-
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -263,29 +220,19 @@ export default function DashboardPage() {
         return;
       }
 
-      // -----------------------------------------------------
       // ROLE CHECK
-      // -----------------------------------------------------
-
       try {
-        const roleResponse =
-          await fetch("/api/auth/role", {
-            cache: "no-store",
-          });
+        const roleResponse = await fetch("/api/auth/role", {
+          cache: "no-store",
+        });
 
         if (roleResponse.ok) {
-          const roleData =
-            await roleResponse.json();
+          const roleData = await roleResponse.json();
 
-          const role = String(
-            roleData?.role || ""
-          ).toLowerCase();
+          const role = String(roleData?.role || "").toLowerCase();
 
           if (role === "customer") {
-            router.replace(
-              "/customer-dashboard"
-            );
-
+            router.replace("/customer-dashboard");
             return;
           }
 
@@ -294,123 +241,80 @@ export default function DashboardPage() {
             role === "sublabel" ||
             role === "sub_label"
           ) {
-            router.replace(
-              "/sub-label-dashboard"
-            );
-
+            router.replace("/sub-label-dashboard");
             return;
           }
         }
       } catch (roleError) {
-        console.error(
-          "Role check error:",
-          roleError
-        );
+        console.error("Role check error:", roleError);
       }
 
-      // -----------------------------------------------------
       // TOTAL SONGS
-      // -----------------------------------------------------
+      const { count: totalSongs } = await supabase
+        .from("songs")
+        .select("*", {
+          count: "exact",
+          head: true,
+        });
 
-      const { count: totalSongs } =
-        await supabase
-          .from("songs")
-          .select("*", {
-            count: "exact",
-            head: true,
-          });
-
-      // -----------------------------------------------------
       // PENDING
-      // -----------------------------------------------------
+      const { count: pending } = await supabase
+        .from("songs")
+        .select("*", {
+          count: "exact",
+          head: true,
+        })
+        .eq("status", "Pending");
 
-      const { count: pending } =
-        await supabase
-          .from("songs")
-          .select("*", {
-            count: "exact",
-            head: true,
-          })
-          .eq("status", "Pending");
-
-      // -----------------------------------------------------
       // APPROVED
-      // -----------------------------------------------------
+      const { count: approved } = await supabase
+        .from("songs")
+        .select("*", {
+          count: "exact",
+          head: true,
+        })
+        .eq("status", "Approved");
 
-      const { count: approved } =
-        await supabase
-          .from("songs")
-          .select("*", {
-            count: "exact",
-            head: true,
-          })
-          .eq("status", "Approved");
-
-      // -----------------------------------------------------
       // REJECTED
-      // -----------------------------------------------------
+      const { count: rejected } = await supabase
+        .from("songs")
+        .select("*", {
+          count: "exact",
+          head: true,
+        })
+        .eq("status", "Rejected");
 
-      const { count: rejected } =
-        await supabase
-          .from("songs")
-          .select("*", {
-            count: "exact",
-            head: true,
-          })
-          .eq("status", "Rejected");
-
-      // -----------------------------------------------------
       // ARTISTS
-      // -----------------------------------------------------
-
-      const { data: artistRows } =
-        await supabase
-          .from("songs")
-          .select("artist_name");
+      const { data: artistRows } = await supabase
+        .from("songs")
+        .select("artist_name");
 
       const uniqueArtists = new Set(
         (artistRows || [])
-          .map(
-            (item: any) =>
-              item.artist_name
-          )
+          .map((item: any) => item.artist_name)
           .filter(Boolean)
       );
 
-      // -----------------------------------------------------
       // ALBUMS
-      // -----------------------------------------------------
-
-      const { data: albumRows } =
-        await supabase
-          .from("songs")
-          .select("album_name");
+      const { data: albumRows } = await supabase
+        .from("songs")
+        .select("album_name");
 
       const uniqueAlbums = new Set(
         (albumRows || [])
-          .map(
-            (item: any) =>
-              item.album_name
-          )
+          .map((item: any) => item.album_name)
           .filter(Boolean)
       );
 
-      // -----------------------------------------------------
       // CUSTOMERS
-      // -----------------------------------------------------
+      const { count: customers } = await supabase
+        .from("customers")
+        .select("*", {
+          count: "exact",
+          head: true,
+        });
 
-      const { count: customers } =
-        await supabase
-          .from("customers")
-          .select("*", {
-            count: "exact",
-            head: true,
-          });
-
-      // -----------------------------------------------------
       // LATEST SONGS
-      // -----------------------------------------------------
-
       const {
         data: latestSongs,
         error: latestSongsError,
@@ -432,174 +336,105 @@ export default function DashboardPage() {
         .limit(5);
 
       if (latestSongsError) {
-        console.error(
-          "Latest songs error:",
-          latestSongsError
-        );
+        console.error("Latest songs error:", latestSongsError);
       }
 
-      // -----------------------------------------------------
       // CUSTOMER SONG MAPPING
-      // -----------------------------------------------------
-
-      const songIds =
-        (latestSongs || []).map(
-          (song: any) => song.id
-        );
+      const songIds = (latestSongs || []).map(
+        (song: any) => song.id
+      );
 
       let customerSongRows: any[] = [];
 
       if (songIds.length > 0) {
-        const {
-          data,
-          error,
-        } = await supabase
+        const { data, error } = await supabase
           .from("customer_songs")
           .select(`
             song_id,
             customer_id
           `)
-          .in(
-            "song_id",
-            songIds
-          );
+          .in("song_id", songIds);
 
         if (error) {
-          console.error(
-            "Customer songs error:",
-            error
-          );
+          console.error("Customer songs error:", error);
         }
 
         customerSongRows = data || [];
       }
 
-      // -----------------------------------------------------
       // CUSTOMER IDS
-      // -----------------------------------------------------
-
-      const customerIds =
-        customerSongRows
-          .map(
-            (item) =>
-              item.customer_id
-          )
-          .filter(Boolean);
+      const customerIds = customerSongRows
+        .map((item) => item.customer_id)
+        .filter(Boolean);
 
       let customerRows: any[] = [];
 
       if (customerIds.length > 0) {
-        const {
-          data,
-          error,
-        } = await supabase
+        const { data, error } = await supabase
           .from("customers")
           .select(`
             id,
             name,
             label_name
           `)
-          .in(
-            "id",
-            customerIds
-          );
+          .in("id", customerIds);
 
         if (error) {
-          console.error(
-            "Customers fetch error:",
-            error
-          );
+          console.error("Customers fetch error:", error);
         }
 
         customerRows = data || [];
       }
 
-      // -----------------------------------------------------
       // MAP SONG DATA
-      // -----------------------------------------------------
+      const finalSongs: Song[] = await Promise.all(
+        (latestSongs || []).map(async (song: any) => {
+          const customerSong = customerSongRows.find(
+            (item) => item.song_id === song.id
+          );
 
-      const finalSongs: Song[] =
-        await Promise.all(
-          (latestSongs || []).map(
-            async (song: any) => {
-              const customerSong =
-                customerSongRows.find(
-                  (item) =>
-                    item.song_id ===
-                    song.id
-                );
+          const customer = customerRows.find(
+            (item) => item.id === customerSong?.customer_id
+          );
 
-              const customer =
-                customerRows.find(
-                  (item) =>
-                    item.id ===
-                    customerSong?.customer_id
-                );
+          const signedCoverUrl = await createSignedUrl(
+            song.cover_url
+          );
 
-              const signedCoverUrl =
-                await createSignedUrl(
-                  song.cover_url
-                );
+          const signedAudioUrl = await createSignedUrl(
+            song.audio_url
+          );
 
-              const signedAudioUrl =
-                await createSignedUrl(
-                  song.audio_url
-                );
-
-              return {
-                id: song.id,
-                song_title:
-                  song.song_title,
-                artist_name:
-                  song.artist_name,
-                album_name:
-                  song.album_name,
-                cover_url:
-                  song.cover_url,
-                audio_url:
-                  song.audio_url,
-                status:
-                  song.status,
-                rejection_reason:
-                  song.rejection_reason,
-                customer_name:
-                  customer?.name ||
-                  null,
-                label_name:
-                  customer?.label_name ||
-                  null,
-                signed_cover_url:
-                  signedCoverUrl,
-                signed_audio_url:
-                  signedAudioUrl,
-              };
-            }
-          )
-        );
+          return {
+            id: song.id,
+            song_title: song.song_title,
+            artist_name: song.artist_name,
+            album_name: song.album_name,
+            cover_url: song.cover_url,
+            audio_url: song.audio_url,
+            status: song.status,
+            rejection_reason: song.rejection_reason,
+            customer_name: customer?.name || null,
+            label_name: customer?.label_name || null,
+            signed_cover_url: signedCoverUrl,
+            signed_audio_url: signedAudioUrl,
+          };
+        })
+      );
 
       setSongs(finalSongs);
 
       setStats({
-        totalSongs:
-          totalSongs || 0,
-        pending:
-          pending || 0,
-        approved:
-          approved || 0,
-        rejected:
-          rejected || 0,
-        artists:
-          uniqueArtists.size,
-        albums:
-          uniqueAlbums.size,
-        customers:
-          customers || 0,
+        totalSongs: totalSongs || 0,
+        pending: pending || 0,
+        approved: approved || 0,
+        rejected: rejected || 0,
+        artists: uniqueArtists.size,
+        albums: uniqueAlbums.size,
+        customers: customers || 0,
       });
     } catch (error) {
-      console.error(
-        "Dashboard loading error:",
-        error
-      );
+      console.error("Dashboard loading error:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -618,39 +453,29 @@ export default function DashboardPage() {
   // APPROVE SONG
   // =========================================================
 
-  async function approveSong(
-    songId: number
-  ) {
-    const confirmed =
-      window.confirm(
-        "Kya aap is song ko approve karna chahte hain?"
-      );
+  async function approveSong(songId: number) {
+    const confirmed = window.confirm(
+      "Kya aap is song ko approve karna chahte hain?"
+    );
 
     if (!confirmed) return;
 
     try {
-      const { error } =
-        await supabase
-          .from("songs")
-          .update({
-            status: "Approved",
-            rejection_reason: null,
-          })
-          .eq("id", songId);
+      const { error } = await supabase
+        .from("songs")
+        .update({
+          status: "Approved",
+          rejection_reason: null,
+        })
+        .eq("id", songId);
 
       if (error) {
         console.error(error);
-
-        alert(
-          "Song approve nahi hua."
-        );
-
+        alert("Song approve nahi hua.");
         return;
       }
 
-      alert(
-        "Song Approved ✅"
-      );
+      alert("Song Approved ✅");
 
       await loadDashboard();
 
@@ -659,10 +484,7 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error(error);
-
-      alert(
-        "Approve karte waqt error aaya."
-      );
+      alert("Approve karte waqt error aaya.");
     }
   }
 
@@ -670,48 +492,34 @@ export default function DashboardPage() {
   // REJECT SONG
   // =========================================================
 
-  async function rejectSong(
-    songId: number
-  ) {
-    const reason =
-      window.prompt(
-        "Reject karne ka reason likhiye:"
-      );
+  async function rejectSong(songId: number) {
+    const reason = window.prompt(
+      "Reject karne ka reason likhiye:"
+    );
 
     if (reason === null) return;
 
     if (!reason.trim()) {
-      alert(
-        "Rejection reason likhna zaroori hai."
-      );
-
+      alert("Rejection reason likhna zaroori hai.");
       return;
     }
 
     try {
-      const { error } =
-        await supabase
-          .from("songs")
-          .update({
-            status: "Rejected",
-            rejection_reason:
-              reason.trim(),
-          })
-          .eq("id", songId);
+      const { error } = await supabase
+        .from("songs")
+        .update({
+          status: "Rejected",
+          rejection_reason: reason.trim(),
+        })
+        .eq("id", songId);
 
       if (error) {
         console.error(error);
-
-        alert(
-          "Song reject nahi hua."
-        );
-
+        alert("Song reject nahi hua.");
         return;
       }
 
-      alert(
-        "Song Rejected ❌"
-      );
+      alert("Song Rejected ❌");
 
       await loadDashboard();
 
@@ -720,10 +528,7 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error(error);
-
-      alert(
-        "Reject karte waqt error aaya."
-      );
+      alert("Reject karte waqt error aaya.");
     }
   }
 
@@ -731,36 +536,26 @@ export default function DashboardPage() {
   // DELETE SONG
   // =========================================================
 
-  async function deleteSong(
-    songId: number
-  ) {
-    const confirmed =
-      window.confirm(
-        "Kya aap is song ko permanently delete karna chahte hain?"
-      );
+  async function deleteSong(songId: number) {
+    const confirmed = window.confirm(
+      "Kya aap is song ko permanently delete karna chahte hain?"
+    );
 
     if (!confirmed) return;
 
     try {
-      const { error } =
-        await supabase
-          .from("songs")
-          .delete()
-          .eq("id", songId);
+      const { error } = await supabase
+        .from("songs")
+        .delete()
+        .eq("id", songId);
 
       if (error) {
         console.error(error);
-
-        alert(
-          "Song delete nahi hua."
-        );
-
+        alert("Song delete nahi hua.");
         return;
       }
 
-      alert(
-        "Song deleted successfully ✅"
-      );
+      alert("Song deleted successfully ✅");
 
       if (selectedSong?.id === songId) {
         setSelectedSong(null);
@@ -769,10 +564,7 @@ export default function DashboardPage() {
       await loadDashboard();
     } catch (error) {
       console.error(error);
-
-      alert(
-        "Delete karte waqt error aaya."
-      );
+      alert("Delete karte waqt error aaya.");
     }
   }
 
@@ -782,7 +574,6 @@ export default function DashboardPage() {
 
   async function logout() {
     await supabase.auth.signOut();
-
     router.replace("/login");
   }
 
@@ -790,13 +581,8 @@ export default function DashboardPage() {
   // STATUS BADGE
   // =========================================================
 
-  function getStatusClass(
-    status: string | null
-  ) {
-    const value =
-      String(
-        status || ""
-      ).toLowerCase();
+  function getStatusClass(status: string | null) {
+    const value = String(status || "").toLowerCase();
 
     if (value === "approved") {
       return "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
@@ -845,13 +631,11 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3">
 
               <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center overflow-hidden">
-
                 <img
                   src="/sd-logo.png"
                   alt="SD Media"
                   className="w-full h-full object-contain"
                 />
-
               </div>
 
               <div>
@@ -883,11 +667,7 @@ export default function DashboardPage() {
 
             <button
               type="button"
-              onClick={() =>
-                router.push(
-                  "/dashboard/songs"
-                )
-              }
+              onClick={() => router.push("/songs")}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>🎵</span>
@@ -898,9 +678,7 @@ export default function DashboardPage() {
 
             <button
               type="button"
-              onClick={() =>
-                router.push("/upload")
-              }
+              onClick={() => router.push("/upload")}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>⬆️</span>
@@ -911,13 +689,24 @@ export default function DashboardPage() {
 
             <button
               type="button"
-              onClick={() =>
-                router.push("/customers")
-              }
+              onClick={() => router.push("/customers")}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
               <span>👥</span>
               Customers
+            </button>
+
+            {/* COPYRIGHT REQUESTS */}
+
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/dashboard/copyright-requests")
+              }
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
+            >
+              <span>📄</span>
+              Copyright Requests
             </button>
 
             {/* CUSTOMER DASHBOARD */}
@@ -925,9 +714,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() =>
-                router.push(
-                  "/customer-dashboard"
-                )
+                router.push("/customer-dashboard")
               }
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
             >
@@ -965,7 +752,6 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between gap-4">
 
                 <div>
-
                   <p className="text-xs text-white/40 mb-1">
                     Admin Dashboard
                   </p>
@@ -973,16 +759,13 @@ export default function DashboardPage() {
                   <h2 className="text-xl sm:text-2xl font-bold">
                     Welcome back 👋
                   </h2>
-
                 </div>
 
                 <div className="flex items-center gap-2">
 
                   <button
                     type="button"
-                    onClick={() =>
-                      loadDashboard(true)
-                    }
+                    onClick={() => loadDashboard(true)}
                     disabled={refreshing}
                     className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm disabled:opacity-50"
                   >
@@ -1004,6 +787,7 @@ export default function DashboardPage() {
               </div>
 
             </div>
+
           </header>
 
           <div className="p-4 sm:p-6 lg:p-8">
@@ -1019,7 +803,6 @@ export default function DashboardPage() {
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
 
                 <div className="flex items-center justify-between mb-4">
-
                   <span className="text-sm text-white/50">
                     Total Songs
                   </span>
@@ -1027,7 +810,6 @@ export default function DashboardPage() {
                   <span className="text-xl">
                     🎵
                   </span>
-
                 </div>
 
                 <p className="text-3xl font-bold">
@@ -1041,7 +823,6 @@ export default function DashboardPage() {
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
 
                 <div className="flex items-center justify-between mb-4">
-
                   <span className="text-sm text-white/50">
                     Pending
                   </span>
@@ -1049,7 +830,6 @@ export default function DashboardPage() {
                   <span className="text-xl">
                     ⏳
                   </span>
-
                 </div>
 
                 <p className="text-3xl font-bold text-yellow-400">
@@ -1063,7 +843,6 @@ export default function DashboardPage() {
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
 
                 <div className="flex items-center justify-between mb-4">
-
                   <span className="text-sm text-white/50">
                     Approved
                   </span>
@@ -1071,7 +850,6 @@ export default function DashboardPage() {
                   <span className="text-xl">
                     ✅
                   </span>
-
                 </div>
 
                 <p className="text-3xl font-bold text-emerald-400">
@@ -1085,7 +863,6 @@ export default function DashboardPage() {
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
 
                 <div className="flex items-center justify-between mb-4">
-
                   <span className="text-sm text-white/50">
                     Rejected
                   </span>
@@ -1093,7 +870,6 @@ export default function DashboardPage() {
                   <span className="text-xl">
                     ❌
                   </span>
-
                 </div>
 
                 <p className="text-3xl font-bold text-red-400">
@@ -1111,7 +887,6 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
                 <p className="text-xs text-white/40 mb-1">
                   Artists
                 </p>
@@ -1119,11 +894,9 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   {stats.artists}
                 </p>
-
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
                 <p className="text-xs text-white/40 mb-1">
                   Albums
                 </p>
@@ -1131,11 +904,9 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   {stats.albums}
                 </p>
-
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
                 <p className="text-xs text-white/40 mb-1">
                   Customers
                 </p>
@@ -1143,11 +914,9 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   {stats.customers}
                 </p>
-
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
                 <p className="text-xs text-white/40 mb-1">
                   Dashboard
                 </p>
@@ -1155,7 +924,6 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold">
                   Active
                 </p>
-
               </div>
 
             </div>
@@ -1171,7 +939,6 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between gap-4">
 
                   <div>
-
                     <h3 className="text-lg font-bold">
                       Recent Songs
                     </h3>
@@ -1179,7 +946,6 @@ export default function DashboardPage() {
                     <p className="text-sm text-white/40 mt-1">
                       Latest uploaded music
                     </p>
-
                   </div>
 
                   <span className="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/50">
@@ -1272,13 +1038,8 @@ export default function DashboardPage() {
                               {song.signed_cover_url ? (
 
                                 <img
-                                  src={
-                                    song.signed_cover_url
-                                  }
-                                  alt={
-                                    song.song_title ||
-                                    "Song"
-                                  }
+                                  src={song.signed_cover_url}
+                                  alt={song.song_title || "Song"}
                                   className="w-full h-full object-cover"
                                 />
 
@@ -1301,13 +1062,11 @@ export default function DashboardPage() {
                             <div className="max-w-[220px]">
 
                               <p className="font-semibold truncate">
-                                {song.song_title ||
-                                  "Untitled Song"}
+                                {song.song_title || "Untitled Song"}
                               </p>
 
                               <p className="text-xs text-white/40 truncate mt-1">
-                                {song.album_name ||
-                                  "No Album"}
+                                {song.album_name || "No Album"}
                               </p>
 
                             </div>
@@ -1319,8 +1078,7 @@ export default function DashboardPage() {
                           <td className="px-5 py-4">
 
                             <p className="text-sm text-white/70">
-                              {song.artist_name ||
-                                "Unknown Artist"}
+                              {song.artist_name || "Unknown Artist"}
                             </p>
 
                           </td>
@@ -1334,8 +1092,7 @@ export default function DashboardPage() {
                                 song.status
                               )}`}
                             >
-                              {song.status ||
-                                "Pending"}
+                              {song.status || "Pending"}
                             </span>
 
                           </td>
@@ -1347,9 +1104,7 @@ export default function DashboardPage() {
                             {song.rejection_reason ? (
 
                               <p className="max-w-[220px] text-xs text-red-300/80">
-                                {
-                                  song.rejection_reason
-                                }
+                                {song.rejection_reason}
                               </p>
 
                             ) : (
@@ -1369,8 +1124,7 @@ export default function DashboardPage() {
                             <div>
 
                               <p className="text-sm">
-                                {song.customer_name ||
-                                  "—"}
+                                {song.customer_name || "—"}
                               </p>
 
                               {song.label_name && (
@@ -1395,9 +1149,7 @@ export default function DashboardPage() {
                                 controls
                                 preload="none"
                                 className="w-[230px] h-9"
-                                src={
-                                  song.signed_audio_url
-                                }
+                                src={song.signed_audio_url}
                               />
 
                             ) : (
@@ -1419,9 +1171,7 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  approveSong(
-                                    song.id
-                                  )
+                                  approveSong(song.id)
                                 }
                                 className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-xs font-medium"
                               >
@@ -1431,9 +1181,7 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  rejectSong(
-                                    song.id
-                                  )
+                                  rejectSong(song.id)
                                 }
                                 className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
                               >
@@ -1453,9 +1201,7 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  setSelectedSong(
-                                    song
-                                  )
+                                  setSelectedSong(song)
                                 }
                                 className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 transition text-xs font-medium"
                               >
@@ -1465,9 +1211,7 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  deleteSong(
-                                    song.id
-                                  )
+                                  deleteSong(song.id)
                                 }
                                 className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
                               >
@@ -1506,16 +1250,12 @@ export default function DashboardPage() {
 
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() =>
-            setSelectedSong(null)
-          }
+          onClick={() => setSelectedSong(null)}
         >
 
           <div
             className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#111114] shadow-2xl"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
+            onClick={(event) => event.stopPropagation()}
           >
 
             {/* MODAL HEADER */}
@@ -1536,9 +1276,7 @@ export default function DashboardPage() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setSelectedSong(null)
-                }
+                onClick={() => setSelectedSong(null)}
                 className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition"
               >
                 ✕
@@ -1561,13 +1299,8 @@ export default function DashboardPage() {
                     {selectedSong.signed_cover_url ? (
 
                       <img
-                        src={
-                          selectedSong.signed_cover_url
-                        }
-                        alt={
-                          selectedSong.song_title ||
-                          "Song Poster"
-                        }
+                        src={selectedSong.signed_cover_url}
+                        alt={selectedSong.song_title || "Song Poster"}
                         className="w-full h-full object-cover"
                       />
 
@@ -1585,35 +1318,32 @@ export default function DashboardPage() {
 
                   <button
                     type="button"
-                    disabled={
-                      downloadLoading ===
-                      "cover"
-                    }
+                    disabled={downloadLoading === "cover"}
                     onClick={() => {
 
-                      const ext =
-                        getFileExtension(
-                          selectedSong.cover_url,
-                          ".jpg"
-                        );
+                      const ext = getFileExtension(
+                        selectedSong.cover_url,
+                        ".jpg"
+                      );
 
-                      const name =
-                        safeFileName(
-                          selectedSong.song_title
-                        );
+                      const name = safeFileName(
+                        selectedSong.song_title
+                      );
 
                       downloadFile(
                         selectedSong.cover_url,
                         `${name}-poster${ext}`,
                         "cover"
                       );
+
                     }}
                     className="w-full mt-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm font-medium disabled:opacity-50"
                   >
-                    {downloadLoading ===
-                    "cover"
+
+                    {downloadLoading === "cover"
                       ? "Downloading..."
                       : "⬇️ Download Poster"}
+
                   </button>
 
                 </div>
@@ -1629,8 +1359,7 @@ export default function DashboardPage() {
                         selectedSong.status
                       )}`}
                     >
-                      {selectedSong.status ||
-                        "Pending"}
+                      {selectedSong.status || "Pending"}
                     </span>
 
                   </div>
@@ -1644,8 +1373,7 @@ export default function DashboardPage() {
                       </p>
 
                       <p className="font-semibold text-lg">
-                        {selectedSong.song_title ||
-                          "Untitled Song"}
+                        {selectedSong.song_title || "Untitled Song"}
                       </p>
 
                     </div>
@@ -1659,8 +1387,7 @@ export default function DashboardPage() {
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.artist_name ||
-                            "—"}
+                          {selectedSong.artist_name || "—"}
                         </p>
 
                       </div>
@@ -1672,8 +1399,7 @@ export default function DashboardPage() {
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.album_name ||
-                            "—"}
+                          {selectedSong.album_name || "—"}
                         </p>
 
                       </div>
@@ -1685,8 +1411,7 @@ export default function DashboardPage() {
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.customer_name ||
-                            "—"}
+                          {selectedSong.customer_name || "—"}
                         </p>
 
                       </div>
@@ -1698,8 +1423,7 @@ export default function DashboardPage() {
                         </p>
 
                         <p className="text-sm">
-                          {selectedSong.label_name ||
-                            "—"}
+                          {selectedSong.label_name || "—"}
                         </p>
 
                       </div>
@@ -1717,9 +1441,7 @@ export default function DashboardPage() {
                         </p>
 
                         <p className="text-sm text-red-300">
-                          {
-                            selectedSong.rejection_reason
-                          }
+                          {selectedSong.rejection_reason}
                         </p>
 
                       </div>
@@ -1761,9 +1483,7 @@ export default function DashboardPage() {
                   <audio
                     controls
                     className="w-full"
-                    src={
-                      selectedSong.signed_audio_url
-                    }
+                    src={selectedSong.signed_audio_url}
                   />
 
                 ) : (
@@ -1778,35 +1498,32 @@ export default function DashboardPage() {
 
                 <button
                   type="button"
-                  disabled={
-                    downloadLoading ===
-                    "audio"
-                  }
+                  disabled={downloadLoading === "audio"}
                   onClick={() => {
 
-                    const ext =
-                      getFileExtension(
-                        selectedSong.audio_url,
-                        ".mp3"
-                      );
+                    const ext = getFileExtension(
+                      selectedSong.audio_url,
+                      ".mp3"
+                    );
 
-                    const name =
-                      safeFileName(
-                        selectedSong.song_title
-                      );
+                    const name = safeFileName(
+                      selectedSong.song_title
+                    );
 
                     downloadFile(
                       selectedSong.audio_url,
                       `${name}${ext}`,
                       "audio"
                     );
+
                   }}
                   className="w-full mt-4 px-4 py-3 rounded-xl bg-white text-black hover:bg-white/90 transition text-sm font-semibold disabled:opacity-50"
                 >
-                  {downloadLoading ===
-                  "audio"
+
+                  {downloadLoading === "audio"
                     ? "Downloading..."
                     : "⬇️ Download Audio"}
+
                 </button>
 
               </div>
@@ -1818,9 +1535,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    approveSong(
-                      selectedSong.id
-                    )
+                    approveSong(selectedSong.id)
                   }
                   className="px-4 py-3 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-sm font-medium"
                 >
@@ -1830,9 +1545,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    rejectSong(
-                      selectedSong.id
-                    )
+                    rejectSong(selectedSong.id)
                   }
                   className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-sm font-medium"
                 >
@@ -1842,9 +1555,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    deleteSong(
-                      selectedSong.id
-                    )
+                    deleteSong(selectedSong.id)
                   }
                   className="px-4 py-3 rounded-xl bg-red-500/5 text-red-400 hover:bg-red-500/15 transition text-sm font-medium"
                 >

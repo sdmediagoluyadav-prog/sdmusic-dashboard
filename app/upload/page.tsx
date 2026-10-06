@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,6 +10,7 @@ export default function UploadPage() {
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [songTitle, setSongTitle] = useState("");
   const [artistName, setArtistName] = useState("");
@@ -27,31 +29,86 @@ export default function UploadPage() {
     let mounted = true;
 
     async function checkUser() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-      if (!session) {
+        if (!session) {
+          router.replace("/login");
+          return;
+        }
+
+        let role = "";
+
+        try {
+          const roleResponse = await fetch("/api/auth/role", {
+            cache: "no-store",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
+
+          if (roleResponse.ok) {
+            const roleData = await roleResponse.json();
+
+            console.log("Upload Page Role:", roleData);
+
+            role = String(roleData?.role || "").toLowerCase();
+          } else {
+            const roleError = await roleResponse.text();
+            console.error(
+              "Role API error:",
+              roleResponse.status,
+              roleError
+            );
+          }
+        } catch (roleError) {
+          console.error("Role check error:", roleError);
+        }
+
+        /*
+          Admin roles
+        */
+        if (
+          role === "admin" ||
+          role === "administrator" ||
+          role === "super_admin"
+        ) {
+          if (mounted) {
+            setIsAdmin(true);
+            setCheckingAuth(false);
+          }
+
+          return;
+        }
+
+        /*
+          Customer check
+        */
+        const { data: customer, error } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("auth_user_id", session.user.id)
+          .single();
+
+        if (error || !customer) {
+          console.error("Customer check error:", error);
+
+          alert("Customer account नहीं मिला ❌");
+
+          router.replace("/login");
+          return;
+        }
+
+        if (mounted) {
+          setIsAdmin(false);
+          setCheckingAuth(false);
+        }
+      } catch (error) {
+        console.error("Auth check error:", error);
+
         router.replace("/login");
-        return;
-      }
-
-      // Check that logged-in user is a customer
-      const { data: customer, error } = await supabase
-        .from("customers")
-        .select("id")
-        .eq("auth_user_id", session.user.id)
-        .single();
-
-      if (error || !customer) {
-        console.error("Customer check error:", error);
-        alert("Customer account नहीं मिला ❌");
-        router.replace("/login");
-        return;
-      }
-
-      if (mounted) {
-        setCheckingAuth(false);
       }
     }
 
@@ -92,10 +149,6 @@ export default function UploadPage() {
     setLoading(true);
 
     try {
-      // ==========================================
-      // 1. CHECK LOGIN SESSION
-      // ==========================================
-
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -105,25 +158,35 @@ export default function UploadPage() {
         return;
       }
 
-      // ==========================================
-      // 2. GET LOGGED-IN CUSTOMER
-      // ==========================================
+      let customer: {
+        id: number;
+        customer_name: string | null;
+        label_name: string | null;
+      } | null = null;
 
-      const { data: customer, error: customerError } =
-        await supabase
-          .from("customers")
-          .select("id, customer_name, label_name")
-          .eq("auth_user_id", session.user.id)
-          .single();
+      /*
+        Customer ke liye customer account find hoga.
+        Admin ke liye customer ki zarurat nahi hai.
+      */
+      if (!isAdmin) {
+        const { data: customerData, error: customerError } =
+          await supabase
+            .from("customers")
+            .select("id, customer_name, label_name")
+            .eq("auth_user_id", session.user.id)
+            .single();
 
-      if (customerError || !customer) {
-        console.error("Customer fetch error:", customerError);
-        throw new Error("Customer account नहीं मिला");
+        if (customerError || !customerData) {
+          console.error(
+            "Customer fetch error:",
+            customerError
+          );
+
+          throw new Error("Customer account नहीं मिला");
+        }
+
+        customer = customerData;
       }
-
-      // ==========================================
-      // 3. CREATE UNIQUE FILE NAMES
-      // ==========================================
 
       const timestamp = Date.now();
 
@@ -133,10 +196,9 @@ export default function UploadPage() {
       const coverPath = `covers/${coverName}`;
       const audioPath = `audio/${audioName}`;
 
-      // ==========================================
-      // 4. UPLOAD COVER
-      // ==========================================
-
+      /*
+        Upload Cover
+      */
       const { error: coverError } = await supabase.storage
         .from("songs")
         .upload(coverPath, cover);
@@ -146,10 +208,9 @@ export default function UploadPage() {
         throw coverError;
       }
 
-      // ==========================================
-      // 5. UPLOAD AUDIO
-      // ==========================================
-
+      /*
+        Upload Audio
+      */
       const { error: audioError } = await supabase.storage
         .from("songs")
         .upload(audioPath, audio);
@@ -157,7 +218,6 @@ export default function UploadPage() {
       if (audioError) {
         console.error("Audio upload error:", audioError);
 
-        // Remove cover if audio upload fails
         await supabase.storage
           .from("songs")
           .remove([coverPath]);
@@ -165,10 +225,9 @@ export default function UploadPage() {
         throw audioError;
       }
 
-      // ==========================================
-      // 6. INSERT SONG INTO SONGS TABLE
-      // ==========================================
-
+      /*
+        Create Song
+      */
       const { data: newSong, error: databaseError } =
         await supabase
           .from("songs")
@@ -194,9 +253,11 @@ export default function UploadPage() {
           .single();
 
       if (databaseError || !newSong) {
-        console.error("Song database error:", databaseError);
+        console.error(
+          "Song database error:",
+          databaseError
+        );
 
-        // Remove uploaded files if database insert fails
         await supabase.storage
           .from("songs")
           .remove([coverPath, audioPath]);
@@ -204,48 +265,60 @@ export default function UploadPage() {
         throw databaseError || new Error("Song create failed");
       }
 
-      // ==========================================
-      // 7. AUTOMATICALLY LINK SONG TO CUSTOMER
-      // ==========================================
+      /*
+        Customer ke song ko customer_songs se link karo.
+        Admin upload mein customer link nahi hoga.
+      */
+      if (!isAdmin && customer) {
+        const { error: customerSongError } =
+          await supabase
+            .from("customer_songs")
+            .insert([
+              {
+                customer_id: customer.id,
+                song_id: newSong.id,
+              },
+            ]);
 
-      const { error: customerSongError } = await supabase
-        .from("customer_songs")
-        .insert([
-          {
-            customer_id: customer.id,
-            song_id: newSong.id,
-          },
-        ]);
+        if (customerSongError) {
+          console.error(
+            "Customer song linking error:",
+            customerSongError
+          );
 
-      if (customerSongError) {
-        console.error(
-          "Customer song linking error:",
-          customerSongError
-        );
+          await supabase
+            .from("songs")
+            .delete()
+            .eq("id", newSong.id);
 
-        // Delete song if customer linking fails
-        await supabase
-          .from("songs")
-          .delete()
-          .eq("id", newSong.id);
+          await supabase.storage
+            .from("songs")
+            .remove([coverPath, audioPath]);
 
-        // Delete uploaded files
-        await supabase.storage
-          .from("songs")
-          .remove([coverPath, audioPath]);
-
-        throw customerSongError;
+          throw customerSongError;
+        }
       }
 
-      // ==========================================
-      // 8. SUCCESS
-      // ==========================================
+      /*
+        Success
+      */
+      if (isAdmin) {
+        alert("Song Uploaded Successfully ✅");
 
-      alert(
-        `Song Uploaded Successfully ✅\n\nCustomer: ${customer.customer_name}`
-      );
+        router.push("/dashboard");
+      } else {
+        alert(
+          `Song Uploaded Successfully ✅\n\nCustomer: ${
+            customer?.customer_name || ""
+          }`
+        );
 
-      // Clear form
+        router.push("/customer-dashboard");
+      }
+
+      /*
+        Form reset
+      */
       setSongTitle("");
       setArtistName("");
       setAlbumName("");
@@ -258,7 +331,6 @@ export default function UploadPage() {
       setCover(null);
       setAudio(null);
 
-      // Reset file inputs
       const fileInputs = document.querySelectorAll(
         'input[type="file"]'
       ) as NodeListOf<HTMLInputElement>;
@@ -266,9 +338,6 @@ export default function UploadPage() {
       fileInputs.forEach((input) => {
         input.value = "";
       });
-
-      // Go back to customer dashboard
-      router.push("/customer-dashboard");
     } catch (error: any) {
       console.error("Upload error:", error);
 
@@ -315,7 +384,6 @@ export default function UploadPage() {
           margin: "0 auto",
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -335,7 +403,13 @@ export default function UploadPage() {
 
           <button
             type="button"
-            onClick={() => router.push("/customer-dashboard")}
+            onClick={() =>
+              router.push(
+                isAdmin
+                  ? "/dashboard"
+                  : "/customer-dashboard"
+              )
+            }
             style={{
               background: "#334155",
               color: "white",
@@ -363,56 +437,72 @@ export default function UploadPage() {
           <input
             placeholder="Song Title"
             value={songTitle}
-            onChange={(e) => setSongTitle(e.target.value)}
+            onChange={(e) =>
+              setSongTitle(e.target.value)
+            }
             style={inputStyle}
           />
 
           <input
             placeholder="Artist Name"
             value={artistName}
-            onChange={(e) => setArtistName(e.target.value)}
+            onChange={(e) =>
+              setArtistName(e.target.value)
+            }
             style={inputStyle}
           />
 
           <input
             placeholder="Album Name"
             value={albumName}
-            onChange={(e) => setAlbumName(e.target.value)}
+            onChange={(e) =>
+              setAlbumName(e.target.value)
+            }
             style={inputStyle}
           />
 
           <input
             placeholder="Singer Name"
             value={singerName}
-            onChange={(e) => setSingerName(e.target.value)}
+            onChange={(e) =>
+              setSingerName(e.target.value)
+            }
             style={inputStyle}
           />
 
           <input
             placeholder="Composer"
             value={composer}
-            onChange={(e) => setComposer(e.target.value)}
+            onChange={(e) =>
+              setComposer(e.target.value)
+            }
             style={inputStyle}
           />
 
           <input
             placeholder="Lyricist"
             value={lyricist}
-            onChange={(e) => setLyricist(e.target.value)}
+            onChange={(e) =>
+              setLyricist(e.target.value)
+            }
             style={inputStyle}
           />
 
           <input
             placeholder="Genre"
             value={genre}
-            onChange={(e) => setGenre(e.target.value)}
+            onChange={(e) =>
+              setGenre(e.target.value)
+            }
             style={inputStyle}
           />
 
           <input
             placeholder="Language"
             value={language}
-            onChange={(e) => setLanguage(e.target.value)}
+            onChange={(e) =>
+              setLanguage(e.target.value)
+            }
             style={inputStyle}
           />
 
@@ -428,7 +518,9 @@ export default function UploadPage() {
           <input
             type="date"
             value={releaseDate}
-            onChange={(e) => setReleaseDate(e.target.value)}
+            onChange={(e) =>
+              setReleaseDate(e.target.value)
+            }
             style={inputStyle}
           />
 
@@ -445,7 +537,9 @@ export default function UploadPage() {
             type="file"
             accept="image/*"
             onChange={(e) =>
-              setCover(e.target.files?.[0] || null)
+              setCover(
+                e.target.files?.[0] || null
+              )
             }
             style={fileInputStyle}
           />
@@ -463,7 +557,9 @@ export default function UploadPage() {
             type="file"
             accept="audio/*"
             onChange={(e) =>
-              setAudio(e.target.files?.[0] || null)
+              setAudio(
+                e.target.files?.[0] || null
+              )
             }
             style={fileInputStyle}
           />
@@ -472,18 +568,24 @@ export default function UploadPage() {
             type="submit"
             disabled={loading}
             style={{
-              background: loading ? "#6b7280" : "#22c55e",
+              background: loading
+                ? "#6b7280"
+                : "#22c55e",
               color: "#fff",
               border: "none",
               padding: "13px",
               borderRadius: "8px",
-              cursor: loading ? "not-allowed" : "pointer",
+              cursor: loading
+                ? "not-allowed"
+                : "pointer",
               fontWeight: "bold",
               fontSize: "15px",
               marginTop: "10px",
             }}
           >
-            {loading ? "Uploading..." : "Upload Song"}
+            {loading
+              ? "Uploading..."
+              : "Upload Song"}
           </button>
         </form>
       </div>

@@ -50,11 +50,7 @@ type LoginDetails = {
   password: string;
 };
 
-type CopyrightRequest = {
-  videoUrl: string;
-  reason: string;
-  details: string;
-};
+
 
 function StatCard({
   icon,
@@ -114,19 +110,6 @@ export default function CustomerDashboard() {
 
   const [loginDetails, setLoginDetails] =
     useState<LoginDetails | null>(null);
-
-  const [showCopyrightForm, setShowCopyrightForm] =
-    useState(false);
-
-  const [copyrightRequest, setCopyrightRequest] =
-    useState<CopyrightRequest>({
-      videoUrl: "",
-      reason: "",
-      details: "",
-    });
-
-  const [copyrightSubmitted, setCopyrightSubmitted] =
-    useState(false);
 
   /* =====================================================
      LOAD CUSTOMER DASHBOARD
@@ -901,44 +884,6 @@ export default function CustomerDashboard() {
     0;
 
   /* =====================================================
-     COPYRIGHT FORM
-  ===================================================== */
-
-  function submitCopyrightRequest(
-    event: React.FormEvent
-  ) {
-    event.preventDefault();
-
-    if (
-      !copyrightRequest.videoUrl.trim()
-    ) {
-      alert(
-        "YouTube Video URL डालें ❌"
-      );
-
-      return;
-    }
-
-    if (
-      !copyrightRequest.reason.trim()
-    ) {
-      alert(
-        "Copyright issue का reason डालें ❌"
-      );
-
-      return;
-    }
-
-    setCopyrightSubmitted(
-      true
-    );
-
-    alert(
-      "Copyright request details submit हो गए ✅\n\nBackend request system हम अगले step में connect करेंगे."
-    );
-  }
-
-  /* =====================================================
      LOADING
   ===================================================== */
 
@@ -1189,16 +1134,11 @@ export default function CustomerDashboard() {
 
             <button
               className="menu-item copyright-menu"
-              onClick={() => {
-                document
-                  .getElementById(
-                    "youtube-copyright"
-                  )
-                  ?.scrollIntoView({
-                    behavior:
-                      "smooth",
-                  });
-              }}
+              onClick={() =>
+                router.push(
+                  "/customer-dashboard/youtube-copyright"
+                )
+              }
             >
               <span>©️</span>
               YouTube Copyright
@@ -2269,243 +2209,6 @@ export default function CustomerDashboard() {
                 </div>
 
               </div>
-
-            </section>
-
-            {/* =================================================
-                YOUTUBE COPYRIGHT
-            ================================================= */}
-
-            <section
-              id="youtube-copyright"
-              className="copyright-section"
-            >
-
-              <div className="copyright-header">
-
-                <div className="copyright-icon">
-                  ©️
-                </div>
-
-                <div>
-                  <h2>
-                    YouTube Copyright
-                  </h2>
-
-                  <p>
-                    Submit a legitimate
-                    copyright / rights-management
-                    request for your content.
-                  </p>
-                </div>
-
-                <span className="copyright-status">
-                  Copyright Support
-                </span>
-
-              </div>
-
-              <div className="copyright-body">
-
-                <div className="copyright-info">
-
-                  <div className="info-box">
-                    <strong>
-                      📺 YouTube Video
-                    </strong>
-
-                    <span>
-                      Submit the URL of the
-                      video related to your
-                      copyright issue.
-                    </span>
-                  </div>
-
-                  <div className="info-box">
-                    <strong>
-                      📋 Issue Details
-                    </strong>
-
-                    <span>
-                      Explain why you own or
-                      control the relevant
-                      rights.
-                    </span>
-                  </div>
-
-                  <div className="info-box">
-                    <strong>
-                      🔎 Review
-                    </strong>
-
-                    <span>
-                      Your request can be
-                      reviewed before any
-                      action is taken.
-                    </span>
-                  </div>
-
-                </div>
-
-                <button
-                  className="copyright-button"
-                  onClick={() =>
-                    setShowCopyrightForm(
-                      !showCopyrightForm
-                    )
-                  }
-                >
-                  {showCopyrightForm
-                    ? "✕ Close Request"
-                    : "＋ Submit Copyright Request"}
-                </button>
-
-              </div>
-
-              {showCopyrightForm && (
-                <form
-                  className="copyright-form"
-                  onSubmit={
-                    submitCopyrightRequest
-                  }
-                >
-
-                  <div className="form-title">
-                    <h3>
-                      Submit Copyright Request
-                    </h3>
-
-                    <p>
-                      Provide accurate
-                      information about your
-                      rights and the affected
-                      content.
-                    </p>
-                  </div>
-
-                  <label>
-                    YouTube Video URL
-
-                    <input
-                      type="url"
-                      value={
-                        copyrightRequest.videoUrl
-                      }
-                      onChange={(e) =>
-                        setCopyrightRequest(
-                          (
-                            previous
-                          ) => ({
-                            ...previous,
-                            videoUrl:
-                              e.target
-                                .value,
-                          })
-                        )
-                      }
-                      placeholder="https://www.youtube.com/watch?v=..."
-                      required
-                    />
-                  </label>
-
-                  <label>
-                    Copyright Issue
-
-                    <select
-                      value={
-                        copyrightRequest.reason
-                      }
-                      onChange={(e) =>
-                        setCopyrightRequest(
-                          (
-                            previous
-                          ) => ({
-                            ...previous,
-                            reason:
-                              e.target
-                                .value,
-                          })
-                        )
-                      }
-                      required
-                    >
-                      <option value="">
-                        Select issue
-                      </option>
-
-                      <option value="My original content was uploaded without permission">
-                        My original content was
-                        uploaded without
-                        permission
-                      </option>
-
-                      <option value="Unauthorized use of my music">
-                        Unauthorized use of
-                        my music
-                      </option>
-
-                      <option value="Unauthorized use of my video">
-                        Unauthorized use of
-                        my video
-                      </option>
-
-                      <option value="Other legitimate copyright issue">
-                        Other legitimate
-                        copyright issue
-                      </option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Details
-
-                    <textarea
-                      value={
-                        copyrightRequest.details
-                      }
-                      onChange={(e) =>
-                        setCopyrightRequest(
-                          (
-                            previous
-                          ) => ({
-                            ...previous,
-                            details:
-                              e.target
-                                .value,
-                          })
-                        )
-                      }
-                      placeholder="Explain the copyright issue and your rights..."
-                      rows={5}
-                      required
-                    />
-                  </label>
-
-                  <div className="copyright-note">
-                    ⚠️ Only submit accurate
-                    information for content
-                    where you have the relevant
-                    rights or authorization.
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="submit-copyright"
-                  >
-                    Submit Request
-                  </button>
-
-                  {copyrightSubmitted && (
-                    <div className="submitted-message">
-                      ✅ Request details
-                      submitted successfully.
-                      Backend request tracking
-                      will be connected separately.
-                    </div>
-                  )}
-
-                </form>
-              )}
 
             </section>
 
