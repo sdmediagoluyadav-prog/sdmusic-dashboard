@@ -25,7 +25,7 @@ export default function UploadPage() {
 
   const [subLabels, setSubLabels] = useState<SubLabel[]>([]);
   const [selectedSubLabelId, setSelectedSubLabelId] =
-    useState("");
+    useState("main");
 
   const [songTitle, setSongTitle] = useState("");
   const [artistName, setArtistName] = useState("");
@@ -321,22 +321,6 @@ export default function UploadPage() {
       return;
     }
 
-    /*
-      CUSTOMER KE LIYE SUB LABEL SELECT
-      KARNA REQUIRED HOGA AGAR SUB LABELS HAIN
-    */
-
-    if (
-      !isAdmin &&
-      subLabels.length > 0 &&
-      !selectedSubLabelId
-    ) {
-      alert(
-        "Please select a Sub Label"
-      );
-      return;
-    }
-
     if (!cover || !audio) {
       alert(
         "Please select Cover Image and Audio File"
@@ -399,10 +383,13 @@ export default function UploadPage() {
 
         /*
           SELECTED SUB LABEL KI SECURITY CHECK
-          CUSTOMER SIRF APNA SUB LABEL USE KAR SAKE
+          SIRF TAB HOGA JAB SUB LABEL SELECT KIYA HO
         */
 
-        if (selectedSubLabelId) {
+        if (
+          selectedSubLabelId &&
+          selectedSubLabelId !== "main"
+        ) {
           const {
             data: selectedSubLabel,
             error:
@@ -636,9 +623,13 @@ export default function UploadPage() {
 
         /*
           SUB LABEL SONG LINK
+          SIRF SUB LABEL SELECT HONE PAR
         */
 
-        if (selectedSubLabelId) {
+        if (
+          selectedSubLabelId &&
+          selectedSubLabelId !== "main"
+        ) {
           const {
             error:
               subLabelSongError,
@@ -722,20 +713,23 @@ export default function UploadPage() {
         );
       } else {
         const selectedName =
-          subLabels.find(
-            (item) =>
-              item.id ===
-              Number(
-                selectedSubLabelId
-              )
-          )?.sub_label_name;
+          selectedSubLabelId === "main"
+            ? labelName
+            : subLabels.find(
+                (item) =>
+                  item.id ===
+                  Number(
+                    selectedSubLabelId
+                  )
+              )?.sub_label_name;
 
         alert(
           `Song Uploaded Successfully ✅\n\nCustomer: ${
             customer?.customer_name ||
             ""
-          }\nSub Label: ${
+          }\nLabel: ${
             selectedName ||
+            labelName ||
             "Main Customer Label"
           }`
         );
@@ -760,7 +754,7 @@ export default function UploadPage() {
       setReleaseDate("");
       setCover(null);
       setAudio(null);
-      setSelectedSubLabelId("");
+      setSelectedSubLabelId("main");
 
       const fileInputs =
         document.querySelectorAll(
@@ -921,91 +915,85 @@ export default function UploadPage() {
             </div>
           )}
 
-          {/* SUB LABEL */}
+          {/* LABEL SELECTION */}
 
-          {!isAdmin &&
-            subLabels.length > 0 && (
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    color: "#cbd5e1",
-                    fontSize: "14px",
-                    marginBottom: "7px",
-                    fontWeight: "600",
-                  }}
-                >
-                  Select Sub Label
-                </label>
-
-                <select
-                  value={
-                    selectedSubLabelId
-                  }
-                  onChange={(e) =>
-                    setSelectedSubLabelId(
-                      e.target.value
-                    )
-                  }
-                  style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
-                    background: "#0f172a",
-                    color: "#fff",
-                    border:
-                      "1px solid #334155",
-                    padding: "12px",
-                    borderRadius: "8px",
-                    outline: "none",
-                    fontSize: "14px",
-                  }}
-                >
-                  <option value="">
-                    -- Select Sub Label --
-                  </option>
-
-                  {subLabels.map(
-                    (subLabel) => (
-                      <option
-                        key={
-                          subLabel.id
-                        }
-                        value={
-                          subLabel.id
-                        }
-                      >
-                        {
-                          subLabel.sub_label_name
-                        }
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
-            )}
-
-          {!isAdmin &&
-            subLabels.length === 0 && (
-              <div
+          {!isAdmin && (
+            <div>
+              <label
                 style={{
-                  background:
-                    "rgba(59,130,246,0.10)",
-                  border:
-                    "1px solid rgba(59,130,246,0.30)",
-                  color: "#bfdbfe",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  fontSize: "13px",
+                  display: "block",
+                  color: "#cbd5e1",
+                  fontSize: "14px",
+                  marginBottom: "7px",
+                  fontWeight: "600",
                 }}
               >
-                ℹ️ Is customer ke liye
-                abhi koi active Sub Label
-                available nahi hai. Song
-                main customer label ke naam
-                par upload hoga.
+                Select Label
+              </label>
+
+              <select
+                value={
+                  selectedSubLabelId
+                }
+                onChange={(e) =>
+                  setSelectedSubLabelId(
+                    e.target.value
+                  )
+                }
+                style={{
+                  width: "100%",
+                  boxSizing:
+                    "border-box",
+                  background: "#0f172a",
+                  color: "#fff",
+                  border:
+                    "1px solid #334155",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  outline: "none",
+                  fontSize: "14px",
+                }}
+              >
+                <option value="main">
+                  Main Label:{" "}
+                  {labelName ||
+                    "Main Customer Label"}
+                </option>
+
+                {subLabels.map(
+                  (subLabel) => (
+                    <option
+                      key={
+                        subLabel.id
+                      }
+                      value={
+                        subLabel.id
+                      }
+                    >
+                      Sub Label:{" "}
+                      {
+                        subLabel.sub_label_name
+                      }
+                    </option>
+                  )
+                )}
+              </select>
+
+              <div
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "12px",
+                  marginTop: "7px",
+                }}
+              >
+                Main Label select karne par
+                song customer ke main label
+                par upload hoga. Sub Label
+                select karne par song us Sub
+                Label me bhi show hoga.
               </div>
-            )}
+            </div>
+          )}
 
           <input
             placeholder="Song Title"
