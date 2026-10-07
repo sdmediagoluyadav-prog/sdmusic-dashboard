@@ -34,7 +34,6 @@ type Song = {
   cover_signed_url?: string | null;
   audio_signed_url?: string | null;
 
-  // NEW
   source_label?: string | null;
   label_type?: string | null;
 };
@@ -1826,8 +1825,6 @@ export default function CustomerDashboard() {
                               }
                             </span>
 
-                            {/* NEW LABEL SOURCE */}
-
                             <small className="song-source">
                               {song.label_type ||
                                 "Main Label"}
@@ -2264,8 +2261,6 @@ export default function CustomerDashboard() {
                       Album
                     </span>
 
-                    {/* NEW */}
-
                     <span>
                       Label / Sub Label
                     </span>
@@ -2338,8 +2333,6 @@ export default function CustomerDashboard() {
                               "—"
                             }
                           </span>
-
-                          {/* NEW LABEL COLUMN */}
 
                           <div className="song-source-cell">
 
@@ -3356,8 +3349,6 @@ export default function CustomerDashboard() {
           margin-top: 3px;
         }
 
-        /* NEW */
-
         .recent-info .song-source {
           display: block;
           color: #3e9cff;
@@ -3612,8 +3603,6 @@ export default function CustomerDashboard() {
           min-width: 130px;
         }
 
-        /* CHANGED TO 6 COLUMNS */
-
         .table-head,
         .table-row {
           display: grid;
@@ -3676,8 +3665,6 @@ export default function CustomerDashboard() {
           font-size: 7px;
           margin-top: 2px;
         }
-
-        /* NEW LABEL CELL */
 
         .song-source-cell {
           min-width: 0;
