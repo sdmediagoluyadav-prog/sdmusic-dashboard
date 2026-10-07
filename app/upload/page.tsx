@@ -97,14 +97,15 @@ export default function UploadPage() {
       setCustomerName(customer.customer_name || "");
       setLabelName(customer.label_name || "");
 
-      const { data: subLabelData, error: subLabelError } = await supabase
-        .from("sub_labels")
-        .select(
-          "id, customer_id, sub_label_name, email, auth_user_id, is_active, created_at"
-        )
-        .eq("customer_id", customer.id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
+      const { data: subLabelData, error: subLabelError } =
+        await supabase
+          .from("sub_labels")
+          .select(
+            "id, customer_id, sub_label_name, email, auth_user_id, is_active, created_at"
+          )
+          .eq("customer_id", customer.id)
+          .eq("is_active", true)
+          .order("created_at", { ascending: false });
 
       if (subLabelError) {
         console.error("Sub label load error:", subLabelError);
@@ -120,24 +121,49 @@ export default function UploadPage() {
     }
   }
 
-  async function uploadFile(
-    file: File,
-    folder: string,
-    fallbackContentType: string
-  ) {
+  /*
+   * IMPORTANT:
+   * Cover -> covers bucket
+   * Audio -> songs bucket
+   */
+  async function uploadCover(file: File) {
     const extension =
-      file.name.split(".").pop()?.toLowerCase() || "file";
+      file.name.split(".").pop()?.toLowerCase() || "jpg";
 
     const fileName = `${Date.now()}-${Math.random()
       .toString(36)
       .substring(2, 10)}.${extension}`;
 
-    const filePath = `${folder}/${fileName}`;
+    const filePath = fileName;
+
+    const { error } = await supabase.storage
+      .from("covers")
+      .upload(filePath, file, {
+        contentType: file.type || "image/jpeg",
+        upsert: false,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    return filePath;
+  }
+
+  async function uploadAudio(file: File) {
+    const extension =
+      file.name.split(".").pop()?.toLowerCase() || "mp3";
+
+    const fileName = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 10)}.${extension}`;
+
+    const filePath = fileName;
 
     const { error } = await supabase.storage
       .from("songs")
       .upload(filePath, file, {
-        contentType: file.type || fallbackContentType,
+        contentType: file.type || "audio/mpeg",
         upsert: false,
       });
 
@@ -217,7 +243,8 @@ export default function UploadPage() {
       ) {
         selectedSubLabel =
           subLabels.find(
-            (item) => String(item.id) === String(selectedSubLabelId)
+            (item) =>
+              String(item.id) === String(selectedSubLabelId)
           ) || null;
 
         if (!selectedSubLabel) {
@@ -226,7 +253,8 @@ export default function UploadPage() {
         }
 
         if (
-          Number(selectedSubLabel.customer_id) !== Number(customerId)
+          Number(selectedSubLabel.customer_id) !==
+          Number(customerId)
         ) {
           alert("Selected Sub Label इस customer का नहीं है.");
           return;
@@ -238,63 +266,85 @@ export default function UploadPage() {
         }
       }
 
-      const coverPath = await uploadFile(
-        cover,
-        "covers",
-        "image/jpeg"
-      );
+      /*
+       * Upload cover into covers bucket
+       */
+      const coverPath = await uploadCover(cover);
 
       let audioPath = "";
 
       try {
-        audioPath = await uploadFile(
-          audio,
-          "audio",
-          audio.type || "audio/wav"
-        );
+        /*
+         * Upload audio into songs bucket
+         */
+        audioPath = await uploadAudio(audio);
       } catch (audioError) {
+        /*
+         * Audio upload failed,
+         * so remove already uploaded cover.
+         */
         await supabase.storage
-          .from("songs")
+          .from("covers")
           .remove([coverPath]);
 
         throw audioError;
       }
 
-      const { data: newSong, error: songError } = await supabase
-        .from("songs")
-        .insert({
-          song_title: songTitle.trim(),
-          artist_name: artistName.trim(),
-          album_name: albumName.trim(),
-          singer_name: singerName.trim(),
-          composer: composer.trim(),
-          music_director: musicDirector.trim(),
-          lyricist: lyricist.trim(),
-          genre: genre.trim(),
-          language: language.trim(),
-          release_date: releaseDate || null,
-          cover_url: coverPath,
-          audio_url: audioPath,
-          status: "Pending",
-        })
-        .select()
-        .single();
+      /*
+       * Save song information.
+       *
+       * cover_url:
+       * only filename, because it is inside covers bucket.
+       *
+       * audio_url:
+       * only filename, because it is inside songs bucket.
+       */
+      const { data: newSong, error: songError } =
+        await supabase
+          .from("songs")
+          .insert({
+            song_title: songTitle.trim(),
+            artist_name: artistName.trim(),
+            album_name: albumName.trim(),
+            singer_name: singerName.trim(),
+            composer: composer.trim(),
+            music_director: musicDirector.trim(),
+            lyricist: lyricist.trim(),
+            genre: genre.trim(),
+            language: language.trim(),
+            release_date: releaseDate || null,
+
+            cover_url: coverPath,
+            audio_url: audioPath,
+
+            status: "Pending",
+          })
+          .select()
+          .single();
 
       if (songError || !newSong) {
         await supabase.storage
+          .from("covers")
+          .remove([coverPath]);
+
+        await supabase.storage
           .from("songs")
-          .remove([coverPath, audioPath]);
+          .remove([audioPath]);
 
         throw songError || new Error("Song insert failed.");
       }
 
+      /*
+       * Main customer relation
+       */
       if (!isAdmin && customerId) {
-        const { error: customerSongError } = await supabase
-          .from("customer_songs")
-          .insert({
-            customer_id: customerId,
-            song_id: newSong.id,
-          });
+        const { error: customerSongError } =
+          await supabase
+            .from("customer_songs")
+            .insert({
+              customer_id: customerId,
+              song_id: newSong.id,
+            });
 
         if (customerSongError) {
           await supabase
@@ -303,22 +353,30 @@ export default function UploadPage() {
             .eq("id", newSong.id);
 
           await supabase.storage
+            .from("covers")
+            .remove([coverPath]);
+
+          await supabase.storage
             .from("songs")
-            .remove([coverPath, audioPath]);
+            .remove([audioPath]);
 
           throw customerSongError;
         }
 
+        /*
+         * Sub label relation
+         */
         if (
           selectedSubLabelId &&
           selectedSubLabelId !== "main"
         ) {
-          const { error: subLabelSongError } = await supabase
-            .from("sub_label_songs")
-            .insert({
-              sub_label_id: Number(selectedSubLabelId),
-              song_id: newSong.id,
-            });
+          const { error: subLabelSongError } =
+            await supabase
+              .from("sub_label_songs")
+              .insert({
+                sub_label_id: Number(selectedSubLabelId),
+                song_id: newSong.id,
+              });
 
           if (subLabelSongError) {
             await supabase
@@ -333,8 +391,12 @@ export default function UploadPage() {
               .eq("id", newSong.id);
 
             await supabase.storage
+              .from("covers")
+              .remove([coverPath]);
+
+            await supabase.storage
               .from("songs")
-              .remove([coverPath, audioPath]);
+              .remove([audioPath]);
 
             throw subLabelSongError;
           }
@@ -353,6 +415,9 @@ export default function UploadPage() {
         `Song uploaded successfully ✅\n\nUploaded under: ${uploadedUnder}`
       );
 
+      /*
+       * Reset form
+       */
       setSongTitle("");
       setArtistName("");
       setAlbumName("");
@@ -375,8 +440,13 @@ export default function UploadPage() {
         "audio"
       ) as HTMLInputElement | null;
 
-      if (coverInput) coverInput.value = "";
-      if (audioInput) audioInput.value = "";
+      if (coverInput) {
+        coverInput.value = "";
+      }
+
+      if (audioInput) {
+        audioInput.value = "";
+      }
     } catch (error: any) {
       console.error("Upload error:", error);
 
@@ -407,6 +477,7 @@ export default function UploadPage() {
         <div style={headerStyle}>
           <div>
             <h1 style={titleStyle}>Upload Song</h1>
+
             <p style={subtitleStyle}>
               Add your music content to SD Music Distribution
             </p>
