@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -20,240 +25,75 @@ type Song = {
   audio_url: string | null;
   status: string | null;
   rejection_reason: string | null;
+  created_at: string | null;
 
   customer_name: string | null;
   label_name: string | null;
-
   label_type: string | null;
   upload_label: string | null;
   sub_label_name: string | null;
-
-  signed_cover_url?: string | null;
-  signed_audio_url?: string | null;
 };
 
-type Stats = {
-  totalSongs: number;
-  pending: number;
-  approved: number;
-  rejected: number;
-  artists: number;
-  albums: number;
-  customers: number;
+type Customer = {
+  id: number;
+  customer_name: string | null;
+  label_name: string | null;
 };
 
-type SubLabelRow = {
+type CustomerSong = {
+  song_id: number;
+  customer_id: number;
+};
+
+type SubLabel = {
   id: number;
   customer_id: number;
   sub_label_name: string | null;
 };
 
-export default function DashboardPage() {
+type SubLabelSong = {
+  song_id: number;
+  sub_label_id: number;
+};
+
+type FilterOption = {
+  key: string;
+  type: "all" | "main" | "sub";
+  name: string;
+};
+
+export default function AdminDashboard() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
   const [songs, setSongs] = useState<Song[]>([]);
+  const [customersCount, setCustomersCount] = useState(0);
 
-  const [searchTerm, setSearchTerm] = useState("");
+  const [search, setSearch] = useState("");
   const [labelFilter, setLabelFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
 
-  const [stats, setStats] = useState<Stats>({
-    totalSongs: 0,
+  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+
+  const [playingSongId, setPlayingSongId] = useState<number | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  const [processingId, setProcessingId] = useState<number | null>(null);
+
+  const [stats, setStats] = useState({
+    total: 0,
     pending: 0,
     approved: 0,
     rejected: 0,
     artists: 0,
     albums: 0,
-    customers: 0,
   });
 
-  const [selectedSong, setSelectedSong] =
-    useState<Song | null>(null);
+  useEffect(() => {
+    checkAdmin();
+  }, []);
 
-  const [downloadLoading, setDownloadLoading] = useState<
-    "audio" | "cover" | null
-  >(null);
-
-  // =========================================================
-  // SIGNED URL
-  // =========================================================
-
-  async function createSignedUrl(
-    path: string | null
-  ): Promise<string | null> {
-    if (!path) return null;
-
-    if (
-      path.startsWith("http://") ||
-      path.startsWith("https://")
-    ) {
-      return path;
-    }
-
-    const { data, error } = await supabase.storage
-      .from("songs")
-      .createSignedUrl(path, 60 * 60);
-
-    if (error || !data?.signedUrl) {
-      console.error("Signed URL error:", error);
-      return null;
-    }
-
-    return data.signedUrl;
-  }
-
-  // =========================================================
-  // SAFE FILE NAME
-  // =========================================================
-
-  function safeFileName(name: string | null) {
-    const cleaned = (name || "song")
-      .replace(/[\\/:*?"<>|]/g, "_")
-      .trim();
-
-    return cleaned || "song";
-  }
-
-  // =========================================================
-  // FILE EXTENSION
-  // =========================================================
-
-  function getFileExtension(
-    path: string | null,
-    fallback: string
-  ): string {
-    if (!path) return fallback;
-
-    const cleanPath = path.split("?")[0];
-    const lastPart = cleanPath.split("/").pop() || "";
-
-    if (!lastPart.includes(".")) {
-      return fallback;
-    }
-
-    const ext = lastPart.split(".").pop();
-
-    if (!ext) {
-      return fallback;
-    }
-
-    return `.${ext}`;
-  }
-
-  // =========================================================
-  // DOWNLOAD FILE
-  // =========================================================
-
-  async function downloadFile(
-    path: string | null,
-    filename: string,
-    type: "audio" | "cover"
-  ) {
-    if (!path) {
-      alert(
-        type === "audio"
-          ? "Audio file nahi mila."
-          : "Poster file nahi mila."
-      );
-      return;
-    }
-
+  async function checkAdmin() {
     try {
-      setDownloadLoading(type);
-
-      if (
-        path.startsWith("http://") ||
-        path.startsWith("https://")
-      ) {
-        const separator = path.includes("?") ? "&" : "?";
-
-        const downloadUrl =
-          `${path}${separator}download=${encodeURIComponent(
-            filename
-          )}`;
-
-        const link = document.createElement("a");
-
-        link.href = downloadUrl;
-        link.download = filename;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-
-        return;
-      }
-
-      const { data, error } = await supabase.storage
-        .from("songs")
-        .createSignedUrl(path, 60 * 60);
-
-      if (error || !data?.signedUrl) {
-        console.error(
-          "Signed download URL error:",
-          error
-        );
-
-        alert(
-          type === "audio"
-            ? "Audio download nahi ho pa raha hai."
-            : "Poster download nahi ho pa raha hai."
-        );
-
-        return;
-      }
-
-      const separator = data.signedUrl.includes("?")
-        ? "&"
-        : "?";
-
-      const downloadUrl =
-        `${data.signedUrl}${separator}download=${encodeURIComponent(
-          filename
-        )}`;
-
-      const link = document.createElement("a");
-
-      link.href = downloadUrl;
-      link.download = filename;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (error) {
-      console.error("Download error:", error);
-
-      alert(
-        type === "audio"
-          ? "Audio download karte waqt error aaya."
-          : "Poster download karte waqt error aaya."
-      );
-    } finally {
-      setDownloadLoading(null);
-    }
-  }
-
-  // =========================================================
-  // LOAD DASHBOARD
-  // =========================================================
-
-  async function loadDashboard(showRefresh = false) {
-    try {
-      if (showRefresh) {
-        setRefreshing(true);
-      }
-
-      // =====================================================
-      // AUTH CHECK
-      // =====================================================
-
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -263,535 +103,661 @@ export default function DashboardPage() {
         return;
       }
 
-      // =====================================================
-      // ROLE CHECK
-      // =====================================================
+      const response = await fetch("/api/auth/role", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
-      try {
-        const roleResponse = await fetch(
-          "/api/auth/role",
-          {
-            cache: "no-store",
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          }
-        );
+      const roleData = await response.json();
 
-        if (roleResponse.ok) {
-          const roleData = await roleResponse.json();
-
-          const role = String(
-            roleData?.role || ""
-          ).toLowerCase();
-
-          if (role === "customer") {
-            router.replace("/customer-dashboard");
-            return;
-          }
-
-          if (
-            role === "sub-label" ||
-            role === "sublabel" ||
-            role === "sub_label"
-          ) {
-            router.replace("/sub-label-dashboard");
-            return;
-          }
-        }
-      } catch (roleError) {
-        console.error(
-          "Role check error:",
-          roleError
-        );
+      if (roleData?.role === "customer") {
+        router.replace("/customer-dashboard");
+        return;
       }
 
-      // =====================================================
-      // TOTAL SONGS
-      // =====================================================
-
-      const { count: totalSongs } = await supabase
-        .from("songs")
-        .select("*", {
-          count: "exact",
-          head: true,
-        });
-
-      // =====================================================
-      // PENDING
-      // =====================================================
-
-      const { count: pending } = await supabase
-        .from("songs")
-        .select("*", {
-          count: "exact",
-          head: true,
-        })
-        .eq("status", "Pending");
-
-      // =====================================================
-      // APPROVED
-      // =====================================================
-
-      const { count: approved } = await supabase
-        .from("songs")
-        .select("*", {
-          count: "exact",
-          head: true,
-        })
-        .eq("status", "Approved");
-
-      // =====================================================
-      // REJECTED
-      // =====================================================
-
-      const { count: rejected } = await supabase
-        .from("songs")
-        .select("*", {
-          count: "exact",
-          head: true,
-        })
-        .eq("status", "Rejected");
-
-      // =====================================================
-      // ARTISTS
-      // =====================================================
-
-      const { data: artistRows } = await supabase
-        .from("songs")
-        .select("artist_name");
-
-      const uniqueArtists = new Set(
-        (artistRows || [])
-          .map((item: any) => item.artist_name)
-          .filter(Boolean)
-      );
-
-      // =====================================================
-      // ALBUMS
-      // =====================================================
-
-      const { data: albumRows } = await supabase
-        .from("songs")
-        .select("album_name");
-
-      const uniqueAlbums = new Set(
-        (albumRows || [])
-          .map((item: any) => item.album_name)
-          .filter(Boolean)
-      );
-
-      // =====================================================
-      // CUSTOMERS
-      // =====================================================
-
-      const { count: customers } = await supabase
-        .from("customers")
-        .select("*", {
-          count: "exact",
-          head: true,
-        });
-
-      // =====================================================
-      // ALL SONGS
-      // =====================================================
-
-      const {
-        data: latestSongs,
-        error: latestSongsError,
-      } = await supabase
-        .from("songs")
-        .select(`
-          id,
-          song_title,
-          artist_name,
-          album_name,
-          singer_name,
-          composer,
-          music_director,
-          lyricist,
-          genre,
-          language,
-          release_date,
-          cover_url,
-          audio_url,
-          status,
-          rejection_reason
-        `)
-        .order("id", {
-          ascending: false,
-        });
-
-      if (latestSongsError) {
-        console.error(
-          "Songs error:",
-          latestSongsError
-        );
+      if (
+        roleData?.role === "sub_label" ||
+        roleData?.role === "sub-label"
+      ) {
+        router.replace("/sub-label-dashboard");
+        return;
       }
 
-      // =====================================================
-      // SONG IDS
-      // =====================================================
+      if (roleData?.role !== "admin") {
+        router.replace("/login");
+        return;
+      }
 
-      const songIds = (latestSongs || []).map(
-        (song: any) => song.id
-      );
+      await loadDashboard();
+    } catch (error) {
+      console.error("Admin auth error:", error);
+      router.replace("/login");
+    }
+  }
 
-      // =====================================================
-      // CUSTOMER SONG MAPPING
-      // =====================================================
+  async function loadDashboard() {
+    setLoading(true);
 
-      let customerSongRows: any[] = [];
+    try {
+      const [
+        songsResponse,
+        customersResponse,
+        customerSongsResponse,
+        subLabelsResponse,
+        subLabelSongsResponse,
+      ] = await Promise.all([
+        supabase
+          .from("songs")
+          .select(`
+            id,
+            song_title,
+            artist_name,
+            album_name,
+            singer_name,
+            composer,
+            music_director,
+            lyricist,
+            genre,
+            language,
+            release_date,
+            cover_url,
+            audio_url,
+            status,
+            rejection_reason,
+            created_at
+          `)
+          .order("created_at", { ascending: false }),
 
-      if (songIds.length > 0) {
-        const { data, error } = await supabase
+        supabase
+          .from("customers")
+          .select(`
+            id,
+            customer_name,
+            label_name
+          `),
+
+        supabase
           .from("customer_songs")
           .select(`
             song_id,
             customer_id
-          `)
-          .in("song_id", songIds);
+          `),
 
-        if (error) {
-          console.error(
-            "Customer songs error:",
-            error
-          );
-        }
-
-        customerSongRows = data || [];
-      }
-
-      // =====================================================
-      // SUB LABEL SONG MAPPING
-      // =====================================================
-
-      let subLabelSongRows: any[] = [];
-
-      if (songIds.length > 0) {
-        const { data, error } = await supabase
-          .from("sub_label_songs")
-          .select(`
-            song_id,
-            sub_label_id
-          `)
-          .in("song_id", songIds);
-
-        if (error) {
-          console.error(
-            "Sub label songs error:",
-            error
-          );
-        }
-
-        subLabelSongRows = data || [];
-      }
-
-      // =====================================================
-      // CUSTOMER IDS
-      // =====================================================
-
-      const customerIds = Array.from(
-        new Set(
-          customerSongRows
-            .map((item) => item.customer_id)
-            .filter(Boolean)
-        )
-      );
-
-      let customerRows: any[] = [];
-
-      if (customerIds.length > 0) {
-        const { data, error } = await supabase
-          .from("customers")
-          .select(`
-            id,
-            name,
-            customer_name,
-            label_name
-          `)
-          .in("id", customerIds);
-
-        if (error) {
-          console.error(
-            "Customers fetch error:",
-            error
-          );
-        }
-
-        customerRows = data || [];
-      }
-
-      // =====================================================
-      // SUB LABEL IDS
-      // =====================================================
-
-      const subLabelIds = Array.from(
-        new Set(
-          subLabelSongRows
-            .map((item) => item.sub_label_id)
-            .filter(Boolean)
-        )
-      );
-
-      let subLabelRows: SubLabelRow[] = [];
-
-      if (subLabelIds.length > 0) {
-        const { data, error } = await supabase
+        supabase
           .from("sub_labels")
           .select(`
             id,
             customer_id,
             sub_label_name
-          `)
-          .in("id", subLabelIds);
+          `),
 
-        if (error) {
-          console.error(
-            "Sub labels fetch error:",
-            error
-          );
-        }
+        supabase
+          .from("sub_label_songs")
+          .select(`
+            song_id,
+            sub_label_id
+          `),
+      ]);
 
-        subLabelRows = data || [];
+      if (songsResponse.error) {
+        console.error("Songs error:", songsResponse.error);
       }
 
-      // =====================================================
-      // MAP SONG DATA
-      // =====================================================
+      if (customersResponse.error) {
+        console.error("Customers error:", customersResponse.error);
+      }
 
-      const finalSongs: Song[] = await Promise.all(
-        (latestSongs || []).map(
-          async (song: any) => {
-            // Customer mapping
-            const customerSong =
-              customerSongRows.find(
-                (item) =>
-                  item.song_id === song.id
-              );
+      if (customerSongsResponse.error) {
+        console.error(
+          "Customer songs error:",
+          customerSongsResponse.error
+        );
+      }
 
-            const customer =
-              customerRows.find(
-                (item) =>
-                  item.id ===
-                  customerSong?.customer_id
-              );
+      if (subLabelsResponse.error) {
+        console.error(
+          "Sub labels error:",
+          subLabelsResponse.error
+        );
+      }
 
-            // Sub label mapping
-            const subLabelSong =
-              subLabelSongRows.find(
-                (item) =>
-                  item.song_id === song.id
-              );
+      if (subLabelSongsResponse.error) {
+        console.error(
+          "Sub label songs error:",
+          subLabelSongsResponse.error
+        );
+      }
 
-            const subLabel =
-              subLabelRows.find(
-                (item) =>
-                  item.id ===
-                  subLabelSong?.sub_label_id
-              );
+      const songRows = (songsResponse.data || []) as Song[];
+      const customerRows = (customersResponse.data || []) as Customer[];
+      const customerSongRows =
+        (customerSongsResponse.data || []) as CustomerSong[];
+      const subLabelRows =
+        (subLabelsResponse.data || []) as SubLabel[];
+      const subLabelSongRows =
+        (subLabelSongsResponse.data || []) as SubLabelSong[];
 
-            // =================================================
-            // LABEL INFORMATION
-            // =================================================
+      const mappedSongs: Song[] = songRows.map((song) => {
+        const customerSong = customerSongRows.find(
+          (item) => item.song_id === song.id
+        );
 
-            let labelType: string | null =
-              null;
+        const customer = customerRows.find(
+          (item) => item.id === customerSong?.customer_id
+        );
 
-            let uploadLabel: string | null =
-              null;
+        const subLabelSong = subLabelSongRows.find(
+          (item) => item.song_id === song.id
+        );
 
-            let subLabelName: string | null =
-              null;
+        const subLabel = subLabelRows.find(
+          (item) => item.id === subLabelSong?.sub_label_id
+        );
 
-            if (subLabel) {
-              labelType = "Sub Label";
+        let labelType: string | null = null;
+        let uploadLabel: string | null = null;
+        let subLabelName: string | null = null;
 
-              uploadLabel =
-                subLabel.sub_label_name || null;
+        if (subLabel) {
+          labelType = "Sub Label";
+          uploadLabel = subLabel.sub_label_name || null;
+          subLabelName = subLabel.sub_label_name || null;
+        } else if (customer) {
+          labelType = "Main Label";
 
-              subLabelName =
-                subLabel.sub_label_name || null;
-            } else if (customer) {
-              labelType = "Main Label";
+          uploadLabel =
+            customer.label_name ||
+            customer.customer_name ||
+            null;
+        }
 
-              uploadLabel =
-                customer.label_name ||
-                customer.customer_name ||
-                customer.name ||
-                null;
-            }
+        return {
+          ...song,
+          customer_name: customer?.customer_name || null,
+          label_name: customer?.label_name || null,
+          label_type: labelType,
+          upload_label: uploadLabel,
+          sub_label_name: subLabelName,
+        };
+      });
 
-            // =================================================
-            // SIGNED URLS
-            // =================================================
+      setSongs(mappedSongs);
+      setCustomersCount(customerRows.length);
 
-            const signedCoverUrl =
-              await createSignedUrl(
-                song.cover_url
-              );
+      const total = mappedSongs.length;
 
-            const signedAudioUrl =
-              await createSignedUrl(
-                song.audio_url
-              );
+      const pending = mappedSongs.filter(
+        (song) =>
+          (song.status || "").toLowerCase() === "pending"
+      ).length;
 
-            return {
-              id: song.id,
+      const approved = mappedSongs.filter(
+        (song) =>
+          (song.status || "").toLowerCase() === "approved"
+      ).length;
 
-              song_title:
-                song.song_title,
+      const rejected = mappedSongs.filter(
+        (song) =>
+          (song.status || "").toLowerCase() === "rejected"
+      ).length;
 
-              artist_name:
-                song.artist_name,
-
-              album_name:
-                song.album_name,
-
-              singer_name:
-                song.singer_name,
-
-              composer:
-                song.composer,
-
-              music_director:
-                song.music_director,
-
-              lyricist:
-                song.lyricist,
-
-              genre:
-                song.genre,
-
-              language:
-                song.language,
-
-              release_date:
-                song.release_date,
-
-              cover_url:
-                song.cover_url,
-
-              audio_url:
-                song.audio_url,
-
-              status:
-                song.status,
-
-              rejection_reason:
-                song.rejection_reason,
-
-              customer_name:
-                customer?.customer_name ||
-                customer?.name ||
-                null,
-
-              label_name:
-                customer?.label_name ||
-                null,
-
-              label_type:
-                labelType,
-
-              upload_label:
-                uploadLabel,
-
-              sub_label_name:
-                subLabelName,
-
-              signed_cover_url:
-                signedCoverUrl,
-
-              signed_audio_url:
-                signedAudioUrl,
-            };
-          }
-        )
+      const artistSet = new Set(
+        mappedSongs
+          .map((song) => song.artist_name?.trim())
+          .filter(Boolean)
       );
 
-      setSongs(finalSongs);
+      const albumSet = new Set(
+        mappedSongs
+          .map((song) => song.album_name?.trim())
+          .filter(Boolean)
+      );
 
       setStats({
-        totalSongs: totalSongs || 0,
-        pending: pending || 0,
-        approved: approved || 0,
-        rejected: rejected || 0,
-        artists: uniqueArtists.size,
-        albums: uniqueAlbums.size,
-        customers: customers || 0,
+        total,
+        pending,
+        approved,
+        rejected,
+        artists: artistSet.size,
+        albums: albumSet.size,
       });
     } catch (error) {
-      console.error(
-        "Dashboard loading error:",
-        error
-      );
+      console.error("Dashboard loading error:", error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }
 
-  // =========================================================
-  // INITIAL LOAD
-  // =========================================================
+  async function approveSong(songId: number) {
+    try {
+      setProcessingId(songId);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+      const { error } = await supabase
+        .from("songs")
+        .update({
+          status: "Approved",
+          rejection_reason: null,
+        })
+        .eq("id", songId);
 
-  // =========================================================
-  // LABEL FILTER OPTIONS
-  // =========================================================
-
-  const labelOptions = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        value: string;
-        labelType: string;
-        name: string;
+      if (error) {
+        alert(error.message);
+        return;
       }
-    >();
+
+      setSongs((current) =>
+        current.map((song) =>
+          song.id === songId
+            ? {
+                ...song,
+                status: "Approved",
+                rejection_reason: null,
+              }
+            : song
+        )
+      );
+
+      setStats((current) => {
+        const oldSong = songs.find((song) => song.id === songId);
+
+        const oldStatus = (
+          oldSong?.status || ""
+        ).toLowerCase();
+
+        return {
+          ...current,
+          pending:
+            oldStatus === "pending"
+              ? Math.max(0, current.pending - 1)
+              : current.pending,
+          approved:
+            oldStatus !== "approved"
+              ? current.approved + 1
+              : current.approved,
+          rejected:
+            oldStatus === "rejected"
+              ? Math.max(0, current.rejected - 1)
+              : current.rejected,
+        };
+      });
+    } catch (error) {
+      console.error("Approve error:", error);
+      alert("Song approve nahi ho paya.");
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
+  async function rejectSong(songId: number) {
+    const reason = window.prompt(
+      "Reject karne ka reason likhiye:"
+    );
+
+    if (reason === null) {
+      return;
+    }
+
+    const finalReason =
+      reason.trim() || "Rejected by admin";
+
+    try {
+      setProcessingId(songId);
+
+      const { error } = await supabase
+        .from("songs")
+        .update({
+          status: "Rejected",
+          rejection_reason: finalReason,
+        })
+        .eq("id", songId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      setSongs((current) =>
+        current.map((song) =>
+          song.id === songId
+            ? {
+                ...song,
+                status: "Rejected",
+                rejection_reason: finalReason,
+              }
+            : song
+        )
+      );
+
+      setStats((current) => {
+        const oldSong = songs.find((song) => song.id === songId);
+
+        const oldStatus = (
+          oldSong?.status || ""
+        ).toLowerCase();
+
+        return {
+          ...current,
+          pending:
+            oldStatus === "pending"
+              ? Math.max(0, current.pending - 1)
+              : current.pending,
+          rejected:
+            oldStatus !== "rejected"
+              ? current.rejected + 1
+              : current.rejected,
+          approved:
+            oldStatus === "approved"
+              ? Math.max(0, current.approved - 1)
+              : current.approved,
+        };
+      });
+    } catch (error) {
+      console.error("Reject error:", error);
+      alert("Song reject nahi ho paya.");
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
+  async function deleteSong(songId: number) {
+    const confirmDelete = window.confirm(
+      "Kya aap sach me is song ko delete karna chahte hain?"
+    );
+
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      setProcessingId(songId);
+
+      const { error } = await supabase
+        .from("songs")
+        .delete()
+        .eq("id", songId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      const deletedSong = songs.find(
+        (song) => song.id === songId
+      );
+
+      setSongs((current) =>
+        current.filter((song) => song.id !== songId)
+      );
+
+      if (selectedSong?.id === songId) {
+        setSelectedSong(null);
+      }
+
+      if (playingSongId === songId) {
+        setPlayingSongId(null);
+        setAudioUrl(null);
+      }
+
+      setStats((current) => {
+        const deletedStatus = (
+          deletedSong?.status || ""
+        ).toLowerCase();
+
+        return {
+          ...current,
+          total: Math.max(0, current.total - 1),
+          pending:
+            deletedStatus === "pending"
+              ? Math.max(0, current.pending - 1)
+              : current.pending,
+          approved:
+            deletedStatus === "approved"
+              ? Math.max(0, current.approved - 1)
+              : current.approved,
+          rejected:
+            deletedStatus === "rejected"
+              ? Math.max(0, current.rejected - 1)
+              : current.rejected,
+        };
+      });
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Song delete nahi ho paya.");
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
+  async function playSong(song: Song) {
+    try {
+      if (playingSongId === song.id) {
+        setPlayingSongId(null);
+        setAudioUrl(null);
+        return;
+      }
+
+      if (!song.audio_url) {
+        alert("Audio file available nahi hai.");
+        return;
+      }
+
+      let path = song.audio_url;
+
+      if (path.includes("/storage/v1/object/")) {
+        const marker = "/songs/";
+
+        const markerIndex = path.indexOf(marker);
+
+        if (markerIndex !== -1) {
+          path = path.substring(
+            markerIndex + marker.length
+          );
+        }
+      }
+
+      path = path.replace(/^\/+/, "");
+
+      const { data, error } = await supabase.storage
+        .from("songs")
+        .createSignedUrl(path, 3600);
+
+      if (error || !data?.signedUrl) {
+        console.error("Audio signed URL error:", error);
+        alert("Audio play nahi ho pa raha hai.");
+        return;
+      }
+
+      setAudioUrl(data.signedUrl);
+      setPlayingSongId(song.id);
+    } catch (error) {
+      console.error("Play error:", error);
+      alert("Audio play nahi ho pa raha hai.");
+    }
+  }
+
+  async function getCoverUrl(
+    coverUrl: string | null
+  ): Promise<string | null> {
+    if (!coverUrl) {
+      return null;
+    }
+
+    try {
+      let path = coverUrl;
+
+      if (path.includes("/storage/v1/object/")) {
+        const marker = "/covers/";
+
+        const markerIndex = path.indexOf(marker);
+
+        if (markerIndex !== -1) {
+          path = path.substring(
+            markerIndex + marker.length
+          );
+        }
+      }
+
+      path = path.replace(/^\/+/, "");
+
+      if (path.startsWith("covers/")) {
+        path = path.substring("covers/".length);
+      }
+
+      const { data, error } = await supabase.storage
+        .from("covers")
+        .createSignedUrl(path, 3600);
+
+      if (error || !data?.signedUrl) {
+        return null;
+      }
+
+      return data.signedUrl;
+    } catch {
+      return null;
+    }
+  }
+
+  async function openSongDetails(song: Song) {
+    setSelectedSong(song);
+
+    if (song.cover_url) {
+      const signedCover = await getCoverUrl(
+        song.cover_url
+      );
+
+      if (signedCover) {
+        setSelectedSong((current) =>
+          current?.id === song.id
+            ? {
+                ...current,
+                cover_url: signedCover,
+              }
+            : current
+        );
+      }
+    }
+  }
+
+  async function downloadAudio(song: Song) {
+    if (!song.audio_url) {
+      alert("Audio file available nahi hai.");
+      return;
+    }
+
+    try {
+      let path = song.audio_url;
+
+      if (path.includes("/storage/v1/object/")) {
+        const marker = "/songs/";
+
+        const markerIndex = path.indexOf(marker);
+
+        if (markerIndex !== -1) {
+          path = path.substring(
+            markerIndex + marker.length
+          );
+        }
+      }
+
+      path = path.replace(/^\/+/, "");
+
+      const { data, error } = await supabase.storage
+        .from("songs")
+        .createSignedUrl(path, 3600);
+
+      if (error || !data?.signedUrl) {
+        alert("Download link nahi ban paaya.");
+        return;
+      }
+
+      const link = document.createElement("a");
+      link.href = data.signedUrl;
+      link.download =
+        song.song_title?.trim() || "song";
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error("Download error:", error);
+      alert("Download nahi ho paaya.");
+    }
+  }
+
+  const labelOptions = useMemo<FilterOption[]>(() => {
+    const map = new Map<string, FilterOption>();
 
     songs.forEach((song) => {
-      if (!song.upload_label) return;
+      if (
+        song.label_type === "Main Label" &&
+        song.upload_label
+      ) {
+        const key = `main:${song.upload_label}`;
 
-      const labelType =
-        song.label_type || "Label";
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            type: "main",
+            name: song.upload_label,
+          });
+        }
+      }
 
-      const value =
-        `${labelType}::${song.upload_label}`;
+      if (
+        song.label_type === "Sub Label" &&
+        song.sub_label_name
+      ) {
+        const key = `sub:${song.sub_label_name}`;
 
-      if (!map.has(value)) {
-        map.set(value, {
-          value,
-          labelType,
-          name: song.upload_label,
-        });
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            type: "sub",
+            name: song.sub_label_name,
+          });
+        }
       }
     });
 
-    return Array.from(map.values()).sort(
-      (a, b) =>
-        a.name.localeCompare(b.name)
+    return Array.from(map.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
     );
   }, [songs]);
 
-  // =========================================================
-  // FILTERED SONGS
-  // =========================================================
-
   const filteredSongs = useMemo(() => {
-    const search =
-      searchTerm.trim().toLowerCase();
+    const searchText = search.trim().toLowerCase();
 
     return songs.filter((song) => {
-      // Search
+      const matchesLabel =
+        labelFilter === "all" ||
+        (labelFilter.startsWith("main:") &&
+          song.label_type === "Main Label" &&
+          song.upload_label ===
+            labelFilter.substring(5)) ||
+        (labelFilter.startsWith("sub:") &&
+          song.label_type === "Sub Label" &&
+          song.sub_label_name ===
+            labelFilter.substring(4));
+
+      if (!matchesLabel) {
+        return false;
+      }
+
+      if (!searchText) {
+        return true;
+      }
+
       const searchableText = [
         song.song_title,
         song.artist_name,
         song.album_name,
         song.singer_name,
+        song.composer,
+        song.music_director,
+        song.lyricist,
+        song.genre,
+        song.language,
         song.customer_name,
         song.label_name,
         song.upload_label,
@@ -802,1802 +768,1749 @@ export default function DashboardPage() {
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch =
-        !search ||
-        searchableText.includes(search);
-
-      // Label
-      const songLabelValue =
-        song.upload_label
-          ? `${song.label_type || "Label"}::${song.upload_label}`
-          : "";
-
-      const matchesLabel =
-        labelFilter === "all" ||
-        songLabelValue === labelFilter;
-
-      // Status
-      const matchesStatus =
-        statusFilter === "all" ||
-        String(song.status || "")
-          .toLowerCase() ===
-          statusFilter.toLowerCase();
-
-      return (
-        matchesSearch &&
-        matchesLabel &&
-        matchesStatus
-      );
+      return searchableText.includes(searchText);
     });
-  }, [
-    songs,
-    searchTerm,
-    labelFilter,
-    statusFilter,
-  ]);
+  }, [songs, search, labelFilter]);
 
-  // =========================================================
-  // CLEAR FILTERS
-  // =========================================================
+  function getStatusClass(status: string | null) {
+    const value = (status || "").toLowerCase();
 
-  function clearFilters() {
-    setSearchTerm("");
-    setLabelFilter("all");
-    setStatusFilter("all");
-  }
-
-  // =========================================================
-  // APPROVE SONG
-  // =========================================================
-
-  async function approveSong(songId: number) {
-    const confirmed = window.confirm(
-      "Kya aap is song ko approve karna chahte hain?"
-    );
-
-    if (!confirmed) return;
-
-    try {
-      const { error } = await supabase
-        .from("songs")
-        .update({
-          status: "Approved",
-          rejection_reason: null,
-        })
-        .eq("id", songId);
-
-      if (error) {
-        console.error(error);
-        alert("Song approve nahi hua.");
-        return;
-      }
-
-      alert("Song Approved ✅");
-
-      await loadDashboard();
-
-      if (selectedSong?.id === songId) {
-        setSelectedSong(null);
-      }
-    } catch (error) {
-      console.error(error);
-
-      alert(
-        "Approve karte waqt error aaya."
-      );
-    }
-  }
-
-  // =========================================================
-  // REJECT SONG
-  // =========================================================
-
-  async function rejectSong(songId: number) {
-    const reason = window.prompt(
-      "Reject karne ka reason likhiye:"
-    );
-
-    if (reason === null) return;
-
-    if (!reason.trim()) {
-      alert(
-        "Rejection reason likhna zaroori hai."
-      );
-      return;
+    if (value === "approved") {
+      return "statusApproved";
     }
 
-    try {
-      const { error } = await supabase
-        .from("songs")
-        .update({
-          status: "Rejected",
-          rejection_reason:
-            reason.trim(),
-        })
-        .eq("id", songId);
-
-      if (error) {
-        console.error(error);
-        alert("Song reject nahi hua.");
-        return;
-      }
-
-      alert("Song Rejected ❌");
-
-      await loadDashboard();
-
-      if (selectedSong?.id === songId) {
-        setSelectedSong(null);
-      }
-    } catch (error) {
-      console.error(error);
-
-      alert(
-        "Reject karte waqt error aaya."
-      );
+    if (value === "rejected") {
+      return "statusRejected";
     }
+
+    return "statusPending";
   }
 
-  // =========================================================
-  // DELETE SONG
-  // =========================================================
-
-  async function deleteSong(songId: number) {
-    const confirmed = window.confirm(
-      "Kya aap is song ko permanently delete karna chahte hain?"
-    );
-
-    if (!confirmed) return;
-
-    try {
-      const { error } = await supabase
-        .from("songs")
-        .delete()
-        .eq("id", songId);
-
-      if (error) {
-        console.error(error);
-        alert("Song delete nahi hua.");
-        return;
-      }
-
-      alert(
-        "Song deleted successfully ✅"
-      );
-
-      if (selectedSong?.id === songId) {
-        setSelectedSong(null);
-      }
-
-      await loadDashboard();
-    } catch (error) {
-      console.error(error);
-
-      alert(
-        "Delete karte waqt error aaya."
-      );
+  function getLabelClass(labelType: string | null) {
+    if (labelType === "Sub Label") {
+      return "subLabelBadge";
     }
-  }
 
-  // =========================================================
-  // LOGOUT
-  // =========================================================
+    return "mainLabelBadge";
+  }
 
   async function logout() {
     await supabase.auth.signOut();
     router.replace("/login");
   }
 
-  // =========================================================
-  // STATUS BADGE
-  // =========================================================
-
-  function getStatusClass(
-    status: string | null
-  ) {
-    const value = String(
-      status || ""
-    ).toLowerCase();
-
-    if (value === "approved") {
-      return "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
-    }
-
-    if (value === "rejected") {
-      return "bg-red-500/15 text-red-400 border border-red-500/20";
-    }
-
-    return "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20";
-  }
-
-  // =========================================================
-  // LABEL BADGE
-  // =========================================================
-
-  function getLabelClass(
-    labelType: string | null
-  ) {
-    if (labelType === "Sub Label") {
-      return "bg-purple-500/15 text-purple-300 border border-purple-500/20";
-    }
-
-    if (labelType === "Main Label") {
-      return "bg-blue-500/15 text-blue-300 border border-blue-500/20";
-    }
-
-    return "bg-white/5 text-white/40 border border-white/10";
-  }
-
-  // =========================================================
-  // RELEASE DATE FORMAT
-  // =========================================================
-
-  function formatReleaseDate(
-    date: string | null
-  ) {
-    if (!date) return "—";
-
-    try {
-      const formatted =
-        new Date(date).toLocaleDateString(
-          "en-IN",
-          {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-          }
-        );
-
-      return formatted;
-    } catch {
-      return date;
-    }
-  }
-
-  // =========================================================
-  // LOADING
-  // =========================================================
+  const selectedLabelName =
+    labelFilter === "all"
+      ? "All Labels"
+      : labelOptions.find(
+          (item) => item.key === labelFilter
+        )?.name || "Selected Label";
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-white/10 border-t-white rounded-full animate-spin mx-auto mb-4" />
-
-          <p className="text-white/60">
-            Loading Admin Dashboard...
-          </p>
+      <div style={styles.loadingScreen}>
+        <div style={styles.loadingBox}>
+          <div style={styles.spinner}></div>
+          <div style={styles.loadingText}>
+            Admin Dashboard Loading...
+          </div>
         </div>
       </div>
     );
   }
 
-  // =========================================================
-  // RENDER
-  // =========================================================
-
   return (
-    <div className="min-h-screen bg-[#09090b] text-white">
-      <div className="flex min-h-screen">
-
-        {/* SIDEBAR */}
-
-        <aside className="hidden lg:flex w-[260px] shrink-0 border-r border-white/10 bg-[#0d0d10] flex-col">
-
-          <div className="p-6 border-b border-white/10">
-
-            <div className="flex items-center gap-3">
-
-              <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center overflow-hidden">
-
-                <img
-                  src="/sd-logo.png"
-                  alt="SD Media"
-                  className="w-full h-full object-contain"
-                />
-
-              </div>
-
-              <div>
-
-                <h1 className="font-bold text-lg">
-                  SD Music
-                </h1>
-
-                <p className="text-xs text-white/40">
-                  Admin Panel
-                </p>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          <nav className="p-4 space-y-2 flex-1">
-
-            <button
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/10 text-white text-sm font-medium"
-            >
-              <span>📊</span>
-              Dashboard
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                router.push("/songs")
-              }
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
-            >
-              <span>🎵</span>
-              All Songs
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                router.push("/upload")
-              }
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
-            >
-              <span>⬆️</span>
-              Upload Song
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                router.push("/customers")
-              }
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
-            >
-              <span>👥</span>
-              Customers
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                router.push(
-                  "/dashboard/copyright-requests"
-                )
-              }
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
-            >
-              <span>📄</span>
-              Copyright Requests
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                router.push(
-                  "/customer-dashboard"
-                )
-              }
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/5 hover:text-white transition text-sm"
-            >
-              <span>🏠</span>
-              Customer Dashboard
-            </button>
-
-          </nav>
-
-          <div className="p-4 border-t border-white/10">
-
-            <button
-              type="button"
-              onClick={logout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-sm font-medium"
-            >
-              🚪 Logout
-            </button>
-
-          </div>
-
-        </aside>
-
-        {/* MAIN */}
-
-        <main className="flex-1 min-w-0">
-
-          {/* HEADER */}
-
-          <header className="sticky top-0 z-20 border-b border-white/10 bg-[#09090b]/90 backdrop-blur-xl">
-
-            <div className="px-4 sm:px-6 lg:px-8 py-4">
-
-              <div className="flex items-center justify-between gap-4">
-
-                <div>
-
-                  <p className="text-xs text-white/40 mb-1">
-                    Admin Dashboard
-                  </p>
-
-                  <h2 className="text-xl sm:text-2xl font-bold">
-                    Welcome back 👋
-                  </h2>
-
-                </div>
-
-                <div className="flex items-center gap-2">
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      loadDashboard(true)
-                    }
-                    disabled={refreshing}
-                    className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm disabled:opacity-50"
-                  >
-                    {refreshing
-                      ? "Refreshing..."
-                      : "🔄 Refresh"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={logout}
-                    className="lg:hidden px-4 py-2.5 rounded-xl bg-red-500/10 text-red-400 text-sm"
-                  >
-                    Logout
-                  </button>
-
-                </div>
-
-              </div>
-
-            </div>
-
-          </header>
-
-          <div className="p-4 sm:p-6 lg:p-8">
-
-            {/* STAT CARDS */}
-
-            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
-                <div className="flex items-center justify-between mb-4">
-
-                  <span className="text-sm text-white/50">
-                    Total Songs
-                  </span>
-
-                  <span className="text-xl">
-                    🎵
-                  </span>
-
-                </div>
-
-                <p className="text-3xl font-bold">
-                  {stats.totalSongs}
-                </p>
-
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
-                <div className="flex items-center justify-between mb-4">
-
-                  <span className="text-sm text-white/50">
-                    Pending
-                  </span>
-
-                  <span className="text-xl">
-                    ⏳
-                  </span>
-
-                </div>
-
-                <p className="text-3xl font-bold text-yellow-400">
-                  {stats.pending}
-                </p>
-
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
-                <div className="flex items-center justify-between mb-4">
-
-                  <span className="text-sm text-white/50">
-                    Approved
-                  </span>
-
-                  <span className="text-xl">
-                    ✅
-                  </span>
-
-                </div>
-
-                <p className="text-3xl font-bold text-emerald-400">
-                  {stats.approved}
-                </p>
-
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
-                <div className="flex items-center justify-between mb-4">
-
-                  <span className="text-sm text-white/50">
-                    Rejected
-                  </span>
-
-                  <span className="text-xl">
-                    ❌
-                  </span>
-
-                </div>
-
-                <p className="text-3xl font-bold text-red-400">
-                  {stats.rejected}
-                </p>
-
-              </div>
-
-            </div>
-
-            {/* SECONDARY STATS */}
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
-                <p className="text-xs text-white/40 mb-1">
-                  Artists
-                </p>
-
-                <p className="text-xl font-bold">
-                  {stats.artists}
-                </p>
-
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
-                <p className="text-xs text-white/40 mb-1">
-                  Albums
-                </p>
-
-                <p className="text-xl font-bold">
-                  {stats.albums}
-                </p>
-
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
-                <p className="text-xs text-white/40 mb-1">
-                  Customers
-                </p>
-
-                <p className="text-xl font-bold">
-                  {stats.customers}
-                </p>
-
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
-                <p className="text-xs text-white/40 mb-1">
-                  Dashboard
-                </p>
-
-                <p className="text-xl font-bold">
-                  Active
-                </p>
-
-              </div>
-
-            </div>
-
-            {/* SONGS */}
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
-
-              {/* SONG HEADER */}
-
-              <div className="p-5 sm:p-6 border-b border-white/10">
-
-                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-
-                  <div>
-
-                    <h3 className="text-lg font-bold">
-                      All Songs
-                    </h3>
-
-                    <p className="text-sm text-white/40 mt-1">
-                      Label aur Sub Label ke according songs dekhiye
-                    </p>
-
-                  </div>
-
-                  <span className="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/50 self-start">
-                    {filteredSongs.length} / {songs.length} Songs
-                  </span>
-
-                </div>
-
-                {/* FILTERS */}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1fr_280px_180px_auto] gap-3 mt-5">
-
-                  {/* SEARCH */}
-
-                  <div>
-
-                    <input
-                      type="text"
-                      value={searchTerm}
-                      onChange={(event) =>
-                        setSearchTerm(
-                          event.target.value
-                        )
-                      }
-                      placeholder="🔎 Song, artist, customer ya label search karein..."
-                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 outline-none focus:border-white/20 text-sm placeholder:text-white/30"
-                    />
-
-                  </div>
-
-                  {/* LABEL FILTER */}
-
-                  <div>
-
-                    <select
-                      value={labelFilter}
-                      onChange={(event) =>
-                        setLabelFilter(
-                          event.target.value
-                        )
-                      }
-                      className="w-full px-4 py-3 rounded-xl bg-[#17171b] border border-white/10 outline-none focus:border-white/20 text-sm text-white"
-                    >
-
-                      <option value="all">
-                        All Labels / Sub Labels
-                      </option>
-
-                      {labelOptions.map(
-                        (option) => (
-                          <option
-                            key={option.value}
-                            value={option.value}
-                          >
-                            {option.labelType}:{" "}
-                            {option.name}
-                          </option>
-                        )
-                      )}
-
-                    </select>
-
-                  </div>
-
-                  {/* STATUS FILTER */}
-
-                  <div>
-
-                    <select
-                      value={statusFilter}
-                      onChange={(event) =>
-                        setStatusFilter(
-                          event.target.value
-                        )
-                      }
-                      className="w-full px-4 py-3 rounded-xl bg-[#17171b] border border-white/10 outline-none focus:border-white/20 text-sm text-white"
-                    >
-
-                      <option value="all">
-                        All Status
-                      </option>
-
-                      <option value="Pending">
-                        Pending
-                      </option>
-
-                      <option value="Approved">
-                        Approved
-                      </option>
-
-                      <option value="Rejected">
-                        Rejected
-                      </option>
-
-                    </select>
-
-                  </div>
-
-                  {/* CLEAR */}
-
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm whitespace-nowrap"
-                  >
-                    ✕ Clear
-                  </button>
-
-                </div>
-
-                {/* SELECTED FILTER INFO */}
-
-                {(labelFilter !== "all" ||
-                  statusFilter !== "all" ||
-                  searchTerm) && (
-
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-
-                    <span className="text-xs text-white/40">
-                      Filter:
-                    </span>
-
-                    {labelFilter !== "all" && (
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs">
-                        🏷️{" "}
-                        {
-                          labelOptions.find(
-                            (item) =>
-                              item.value ===
-                              labelFilter
-                          )?.labelType
-                        }
-                        :{" "}
-                        {
-                          labelOptions.find(
-                            (item) =>
-                              item.value ===
-                              labelFilter
-                          )?.name
-                        }
-                      </span>
-                    )}
-
-                    {statusFilter !== "all" && (
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 text-xs">
-                        Status:{" "}
-                        {statusFilter}
-                      </span>
-                    )}
-
-                    {searchTerm && (
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
-                        Search:{" "}
-                        {searchTerm}
-                      </span>
-                    )}
-
-                  </div>
-
-                )}
-
-              </div>
-
-              {/* SONG LIST */}
-
-              {filteredSongs.length === 0 ? (
-
-                <div className="p-10 text-center">
-
-                  <div className="text-4xl mb-3">
-                    🎵
-                  </div>
-
-                  <p className="text-white/50">
-                    Is filter ke according koi song nahi mila.
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="mt-4 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm"
-                  >
-                    Clear Filters
-                  </button>
-
-                </div>
-
-              ) : (
-
-                <div className="overflow-x-auto">
-
-                  <table className="w-full min-w-[1250px]">
-
-                    <thead>
-
-                      <tr className="border-b border-white/10 text-left">
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Cover
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Song
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Artist
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Status
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Rejection Reason
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Customer / Label
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Play
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Approval
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-medium text-white/40">
-                          Action
-                        </th>
-
-                      </tr>
-
-                    </thead>
-
-                    <tbody>
-
-                      {filteredSongs.map(
-                        (song) => (
-
-                          <tr
-                            key={song.id}
-                            className="border-b border-white/5 hover:bg-white/[0.02] transition"
-                          >
-
-                            {/* COVER */}
-
-                            <td className="px-5 py-4">
-
-                              <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/5 border border-white/10">
-
-                                {song.signed_cover_url ? (
-
-                                  <img
-                                    src={
-                                      song.signed_cover_url
-                                    }
-                                    alt={
-                                      song.song_title ||
-                                      "Song"
-                                    }
-                                    className="w-full h-full object-cover"
-                                  />
-
-                                ) : (
-
-                                  <div className="w-full h-full flex items-center justify-center text-xl">
-                                    🎵
-                                  </div>
-
-                                )}
-
-                              </div>
-
-                            </td>
-
-                            {/* SONG */}
-
-                            <td className="px-5 py-4">
-
-                              <div className="max-w-[220px]">
-
-                                <p className="font-semibold truncate">
-                                  {song.song_title ||
-                                    "Untitled Song"}
-                                </p>
-
-                                <p className="text-xs text-white/40 truncate mt-1">
-                                  {song.album_name ||
-                                    "No Album"}
-                                </p>
-
-                              </div>
-
-                            </td>
-
-                            {/* ARTIST */}
-
-                            <td className="px-5 py-4">
-
-                              <p className="text-sm text-white/70">
-                                {song.artist_name ||
-                                  "Unknown Artist"}
-                              </p>
-
-                            </td>
-
-                            {/* STATUS */}
-
-                            <td className="px-5 py-4">
-
-                              <span
-                                className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getStatusClass(
-                                  song.status
-                                )}`}
-                              >
-                                {song.status ||
-                                  "Pending"}
-                              </span>
-
-                            </td>
-
-                            {/* REJECTION */}
-
-                            <td className="px-5 py-4">
-
-                              {song.rejection_reason ? (
-
-                                <p className="max-w-[220px] text-xs text-red-300/80">
-                                  {
-                                    song.rejection_reason
-                                  }
-                                </p>
-
-                              ) : (
-
-                                <span className="text-xs text-white/30">
-                                  —
-                                </span>
-
-                              )}
-
-                            </td>
-
-                            {/* CUSTOMER / LABEL */}
-
-                            <td className="px-5 py-4">
-
-                              <div>
-
-                                <p className="text-sm">
-                                  {song.customer_name ||
-                                    "—"}
-                                </p>
-
-                                {song.upload_label && (
-
-                                  <div className="mt-1.5">
-
-                                    <span
-                                      className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-medium ${getLabelClass(
-                                        song.label_type
-                                      )}`}
-                                    >
-                                      {song.label_type ||
-                                        "Label"}
-                                    </span>
-
-                                    <p className="text-xs text-white/50 mt-1">
-                                      {song.upload_label}
-                                    </p>
-
-                                  </div>
-
-                                )}
-
-                              </div>
-
-                            </td>
-
-                            {/* AUDIO */}
-
-                            <td className="px-5 py-4">
-
-                              {song.signed_audio_url ? (
-
-                                <audio
-                                  controls
-                                  preload="none"
-                                  className="w-[230px] h-9"
-                                  src={
-                                    song.signed_audio_url
-                                  }
-                                />
-
-                              ) : (
-
-                                <span className="text-xs text-white/30">
-                                  Audio unavailable
-                                </span>
-
-                              )}
-
-                            </td>
-
-                            {/* APPROVAL */}
-
-                            <td className="px-5 py-4">
-
-                              <div className="flex items-center gap-2">
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    approveSong(
-                                      song.id
-                                    )
-                                  }
-                                  className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-xs font-medium"
-                                >
-                                  ✓ Approve
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    rejectSong(
-                                      song.id
-                                    )
-                                  }
-                                  className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
-                                >
-                                  ✕ Reject
-                                </button>
-
-                              </div>
-
-                            </td>
-
-                            {/* ACTION */}
-
-                            <td className="px-5 py-4">
-
-                              <div className="flex flex-col gap-2 w-[120px]">
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setSelectedSong(
-                                      song
-                                    )
-                                  }
-                                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 transition text-xs font-medium"
-                                >
-                                  👁️ Details
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    deleteSong(
-                                      song.id
-                                    )
-                                  }
-                                  className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
-                                >
-                                  🗑️ Delete
-                                </button>
-
-                              </div>
-
-                            </td>
-
-                          </tr>
-
-                        )
-                      )}
-
-                    </tbody>
-
-                  </table>
-
-                </div>
-
-              )}
-
-            </div>
-
-          </div>
-
-        </main>
-
-      </div>
-
-      {/* =====================================================
-          SONG DETAILS MODAL
-      ====================================================== */}
-
-      {selectedSong && (
-
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() =>
-            setSelectedSong(null)
-          }
-        >
-
-          <div
-            className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#111114] shadow-2xl"
-            onClick={(event) =>
-              event.stopPropagation()
+    <div style={styles.page}>
+      <aside style={styles.sidebar}>
+        <div style={styles.logoBox}>
+          <img
+            src="/sd-logo.png"
+            alt="SD Media"
+            style={styles.logo}
+          />
+        </div>
+
+        <div style={styles.brandTitle}>
+          SD Media
+        </div>
+
+        <div style={styles.brandSubTitle}>
+          Music Content Management
+        </div>
+
+        <nav style={styles.nav}>
+          <button
+            style={{
+              ...styles.navButton,
+              ...styles.navButtonActive,
+            }}
+            onClick={() => router.push("/dashboard")}
+          >
+            <span>📊</span>
+            Dashboard
+          </button>
+
+          <button
+            style={styles.navButton}
+            onClick={() => router.push("/songs")}
+          >
+            <span>🎵</span>
+            All Songs
+          </button>
+
+          <button
+            style={styles.navButton}
+            onClick={() => router.push("/upload")}
+          >
+            <span>⬆️</span>
+            Upload Song
+          </button>
+
+          <button
+            style={styles.navButton}
+            onClick={() => router.push("/customers")}
+          >
+            <span>👥</span>
+            Customers
+          </button>
+
+          <button
+            style={styles.navButton}
+            onClick={() =>
+              router.push("/dashboard/copyright-requests")
             }
           >
+            <span>©️</span>
+            Copyright Requests
+          </button>
 
-            {/* MODAL HEADER */}
+          <button
+            style={styles.navButton}
+            onClick={() =>
+              router.push("/customer-dashboard")
+            }
+          >
+            <span>👤</span>
+            Customer Dashboard
+          </button>
+        </nav>
 
-            <div className="sticky top-0 z-10 px-5 sm:px-6 py-4 border-b border-white/10 bg-[#111114]/95 backdrop-blur-xl flex items-center justify-between">
+        <div style={styles.sidebarBottom}>
+          <button
+            style={styles.logoutButton}
+            onClick={logout}
+          >
+            <span>🚪</span>
+            Logout
+          </button>
+        </div>
+      </aside>
 
+      <main style={styles.main}>
+        <div style={styles.header}>
+          <div>
+            <h1 style={styles.pageTitle}>
+              Admin Dashboard
+            </h1>
+            <p style={styles.pageSubtitle}>
+              Manage your music distribution content
+            </p>
+          </div>
+
+          <div style={styles.headerRight}>
+            <div style={styles.adminBadge}>
+              🛡️ Admin
+            </div>
+          </div>
+        </div>
+
+        <section style={styles.statsGrid}>
+          <StatCard
+            title="Total Songs"
+            value={stats.total}
+            icon="🎵"
+          />
+
+          <StatCard
+            title="Pending"
+            value={stats.pending}
+            icon="⏳"
+          />
+
+          <StatCard
+            title="Approved"
+            value={stats.approved}
+            icon="✅"
+          />
+
+          <StatCard
+            title="Rejected"
+            value={stats.rejected}
+            icon="❌"
+          />
+
+          <StatCard
+            title="Artists"
+            value={stats.artists}
+            icon="🎤"
+          />
+
+          <StatCard
+            title="Albums"
+            value={stats.albums}
+            icon="💿"
+          />
+
+          <StatCard
+            title="Customers"
+            value={customersCount}
+            icon="👥"
+          />
+        </section>
+
+        <section style={styles.contentCard}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.sectionTitle}>
+                All Songs
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                {labelFilter === "all"
+                  ? `Showing ${filteredSongs.length} songs`
+                  : `${selectedLabelName} — ${filteredSongs.length} songs`}
+              </p>
+            </div>
+
+            <div style={styles.filters}>
+              <div style={styles.searchBox}>
+                <span style={styles.searchIcon}>
+                  🔎
+                </span>
+
+                <input
+                  value={search}
+                  onChange={(e) =>
+                    setSearch(e.target.value)
+                  }
+                  placeholder="Search song, artist, customer..."
+                  style={styles.searchInput}
+                />
+              </div>
+
+              <select
+                value={labelFilter}
+                onChange={(e) =>
+                  setLabelFilter(e.target.value)
+                }
+                style={styles.filterSelect}
+              >
+                <option value="all">
+                  All Labels
+                </option>
+
+                {labelOptions
+                  .filter((item) => item.type === "main")
+                  .map((item) => (
+                    <option
+                      key={item.key}
+                      value={item.key}
+                    >
+                      🏢 Main Label — {item.name}
+                    </option>
+                  ))}
+
+                {labelOptions
+                  .filter((item) => item.type === "sub")
+                  .map((item) => (
+                    <option
+                      key={item.key}
+                      value={item.key}
+                    >
+                      🏷️ Sub Label — {item.name}
+                    </option>
+                  ))}
+              </select>
+
+              {labelFilter !== "all" && (
+                <button
+                  style={styles.clearFilterButton}
+                  onClick={() =>
+                    setLabelFilter("all")
+                  }
+                >
+                  Clear Filter
+                </button>
+              )}
+            </div>
+          </div>
+
+          {filteredSongs.length === 0 ? (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIcon}>🎵</div>
+              <div style={styles.emptyTitle}>
+                No songs found
+              </div>
+              <div style={styles.emptyText}>
+                {labelFilter !== "all"
+                  ? "Is label ke under koi song nahi mila."
+                  : "Abhi koi song available nahi hai."}
+              </div>
+            </div>
+          ) : (
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Cover</th>
+                    <th style={styles.th}>Song</th>
+                    <th style={styles.th}>Artist</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={styles.th}>
+                      Rejection Reason
+                    </th>
+                    <th style={styles.th}>
+                      Customer / Label
+                    </th>
+                    <th style={styles.th}>Play</th>
+                    <th style={styles.th}>
+                      Approval
+                    </th>
+                    <th style={styles.th}>Action</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredSongs.map((song) => (
+                    <tr key={song.id}>
+                      <td style={styles.td}>
+                        <CoverImage
+                          coverUrl={song.cover_url}
+                          title={song.song_title}
+                        />
+                      </td>
+
+                      <td style={styles.td}>
+                        <div style={styles.songTitle}>
+                          {song.song_title ||
+                            "Untitled Song"}
+                        </div>
+
+                        <div style={styles.songMeta}>
+                          {song.album_name ||
+                            "No Album"}
+                        </div>
+                      </td>
+
+                      <td style={styles.td}>
+                        <div style={styles.artistName}>
+                          {song.artist_name ||
+                            "Unknown Artist"}
+                        </div>
+
+                        {song.singer_name && (
+                          <div style={styles.smallText}>
+                            Singer:{" "}
+                            {song.singer_name}
+                          </div>
+                        )}
+                      </td>
+
+                      <td style={styles.td}>
+                        <span
+                          className={getStatusClass(
+                            song.status
+                          )}
+                          style={
+                            styles.statusBadge
+                          }
+                        >
+                          {song.status ||
+                            "Pending"}
+                        </span>
+                      </td>
+
+                      <td style={styles.td}>
+                        {song.rejection_reason ? (
+                          <div
+                            style={
+                              styles.rejectionText
+                            }
+                          >
+                            {song.rejection_reason}
+                          </div>
+                        ) : (
+                          <span
+                            style={
+                              styles.mutedText
+                            }
+                          >
+                            —
+                          </span>
+                        )}
+                      </td>
+
+                      <td style={styles.td}>
+                        <div
+                          style={
+                            styles.customerLabelBox
+                          }
+                        >
+                          <div
+                            style={
+                              styles.customerName
+                            }
+                          >
+                            👤{" "}
+                            {song.customer_name ||
+                              "Customer Not Found"}
+                          </div>
+
+                          {song.label_type ===
+                            "Main Label" && (
+                            <>
+                              <div
+                                style={
+                                  styles.labelLine
+                                }
+                              >
+                                <span
+                                  style={{
+                                    ...styles.labelBadge,
+                                    ...styles.mainLabelBadge,
+                                  }}
+                                >
+                                  🏢 Main Label
+                                </span>
+                              </div>
+
+                              <div
+                                style={
+                                  styles.uploadLabel
+                                }
+                              >
+                                {song.upload_label ||
+                                  song.label_name ||
+                                  "Label Not Found"}
+                              </div>
+                            </>
+                          )}
+
+                          {song.label_type ===
+                            "Sub Label" && (
+                            <>
+                              <div
+                                style={
+                                  styles.labelLine
+                                }
+                              >
+                                <span
+                                  style={{
+                                    ...styles.labelBadge,
+                                    ...styles.subLabelBadge,
+                                  }}
+                                >
+                                  🏷️ Sub Label
+                                </span>
+                              </div>
+
+                              <div
+                                style={
+                                  styles.uploadLabel
+                                }
+                              >
+                                {song.sub_label_name ||
+                                  song.upload_label ||
+                                  "Sub Label Not Found"}
+                              </div>
+                            </>
+                          )}
+
+                          {!song.label_type && (
+                            <div
+                              style={
+                                styles.mutedText
+                              }
+                            >
+                              Label information
+                              not found
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      <td style={styles.td}>
+                        <button
+                          style={
+                            styles.playButton
+                          }
+                          onClick={() =>
+                            playSong(song)
+                          }
+                        >
+                          {playingSongId ===
+                          song.id
+                            ? "⏹ Stop"
+                            : "▶ Play"}
+                        </button>
+                      </td>
+
+                      <td style={styles.td}>
+                        <div
+                          style={
+                            styles.approvalButtons
+                          }
+                        >
+                          <button
+                            style={{
+                              ...styles.approveButton,
+                              opacity:
+                                processingId ===
+                                song.id
+                                  ? 0.6
+                                  : 1,
+                            }}
+                            disabled={
+                              processingId ===
+                              song.id
+                            }
+                            onClick={() =>
+                              approveSong(
+                                song.id
+                              )
+                            }
+                          >
+                            ✓
+                          </button>
+
+                          <button
+                            style={{
+                              ...styles.rejectButton,
+                              opacity:
+                                processingId ===
+                                song.id
+                                  ? 0.6
+                                  : 1,
+                            }}
+                            disabled={
+                              processingId ===
+                              song.id
+                            }
+                            onClick={() =>
+                              rejectSong(
+                                song.id
+                              )
+                            }
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </td>
+
+                      <td style={styles.td}>
+                        <div
+                          style={
+                            styles.actionButtons
+                          }
+                        >
+                          <button
+                            style={
+                              styles.detailsButton
+                            }
+                            onClick={() =>
+                              openSongDetails(
+                                song
+                              )
+                            }
+                          >
+                            Details
+                          </button>
+
+                          <button
+                            style={
+                              styles.deleteButton
+                            }
+                            disabled={
+                              processingId ===
+                              song.id
+                            }
+                            onClick={() =>
+                              deleteSong(
+                                song.id
+                              )
+                            }
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </main>
+
+      {audioUrl && playingSongId && (
+        <div style={styles.audioPlayer}>
+          <div style={styles.audioPlayerTitle}>
+            ▶ Playing Song
+          </div>
+
+          <audio
+            src={audioUrl}
+            controls
+            autoPlay
+            style={styles.audio}
+            onEnded={() => {
+              setPlayingSongId(null);
+              setAudioUrl(null);
+            }}
+          />
+
+          <button
+            style={styles.audioClose}
+            onClick={() => {
+              setPlayingSongId(null);
+              setAudioUrl(null);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {selectedSong && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => setSelectedSong(null)}
+        >
+          <div
+            style={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={styles.modalHeader}>
               <div>
-
-                <h2 className="text-lg sm:text-xl font-bold">
+                <h2 style={styles.modalTitle}>
                   Song Details
                 </h2>
 
-                <p className="text-xs text-white/40 mt-1">
-                  Complete song information & files
-                </p>
-
+                <div style={styles.modalSubtitle}>
+                  ID: {selectedSong.id}
+                </div>
               </div>
 
               <button
-                type="button"
+                style={styles.modalClose}
                 onClick={() =>
                   setSelectedSong(null)
                 }
-                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition"
               >
                 ✕
               </button>
-
             </div>
 
-            {/* MODAL BODY */}
-
-            <div className="p-5 sm:p-6">
-
-              <div className="grid md:grid-cols-[220px_1fr] gap-6">
-
-                {/* POSTER */}
-
-                <div>
-
-                  <div className="aspect-square rounded-2xl overflow-hidden bg-white/5 border border-white/10">
-
-                    {selectedSong.signed_cover_url ? (
-
-                      <img
-                        src={
-                          selectedSong.signed_cover_url
-                        }
-                        alt={
-                          selectedSong.song_title ||
-                          "Song Poster"
-                        }
-                        className="w-full h-full object-cover"
-                      />
-
-                    ) : (
-
-                      <div className="w-full h-full flex items-center justify-center text-5xl">
-                        🎵
-                      </div>
-
-                    )}
-
-                  </div>
-
-                  {/* DOWNLOAD POSTER */}
-
-                  <button
-                    type="button"
-                    disabled={
-                      downloadLoading === "cover"
+            <div style={styles.modalBody}>
+              <div style={styles.modalCoverBox}>
+                {selectedSong.cover_url ? (
+                  <img
+                    src={selectedSong.cover_url}
+                    alt={
+                      selectedSong.song_title ||
+                      "Cover"
                     }
-                    onClick={() => {
-
-                      const ext =
-                        getFileExtension(
-                          selectedSong.cover_url,
-                          ".jpg"
-                        );
-
-                      const name =
-                        safeFileName(
-                          selectedSong.song_title
-                        );
-
-                      downloadFile(
-                        selectedSong.cover_url,
-                        `${name}-poster${ext}`,
-                        "cover"
-                      );
-
-                    }}
-                    className="w-full mt-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm font-medium disabled:opacity-50"
-                  >
-
-                    {downloadLoading === "cover"
-                      ? "Downloading..."
-                      : "⬇️ Download Poster"}
-
-                  </button>
-
-                </div>
-
-                {/* SONG INFO */}
-
-                <div>
-
-                  <div className="mb-5">
-
-                    <span
-                      className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getStatusClass(
-                        selectedSong.status
-                      )}`}
-                    >
-                      {selectedSong.status ||
-                        "Pending"}
-                    </span>
-
-                  </div>
-
-                  {/* BASIC DETAILS */}
-
-                  <div className="space-y-4">
-
-                    <div>
-
-                      <p className="text-xs text-white/40 mb-1">
-                        Song Name
-                      </p>
-
-                      <p className="font-semibold text-lg">
-                        {selectedSong.song_title ||
-                          "Untitled Song"}
-                      </p>
-
-                    </div>
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Artist
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.artist_name ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Album
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.album_name ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Singer
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.singer_name ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Composer
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.composer ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Music Director
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.music_director ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Lyricist
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.lyricist ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Genre
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.genre ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Language
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.language ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Release Date
-                        </p>
-
-                        <p className="text-sm">
-                          {formatReleaseDate(
-                            selectedSong.release_date
-                          )}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Customer
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.customer_name ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Main Label
-                        </p>
-
-                        <p className="text-sm">
-                          {selectedSong.label_name ||
-                            "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-white/40 mb-1">
-                          Label Type
-                        </p>
-
-                        <span
-                          className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getLabelClass(
-                            selectedSong.label_type
-                          )}`}
-                        >
-                          {selectedSong.label_type ||
-                            "—"}
-                        </span>
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <p className="text-xs text-white/40 mb-1">
-                          Uploaded Under
-                        </p>
-
-                        <p className="text-sm font-semibold">
-                          {selectedSong.upload_label ||
-                            "—"}
-                        </p>
-
-                        {selectedSong.sub_label_name && (
-                          <p className="text-xs text-purple-300 mt-1">
-                            Sub Label:{" "}
-                            {
-                              selectedSong.sub_label_name
-                            }
-                          </p>
-                        )}
-                      </div>
-
-                    </div>
-
-                    {/* REJECTION REASON */}
-
-                    {selectedSong.rejection_reason && (
-
-                      <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4">
-
-                        <p className="text-xs text-red-300/60 mb-1">
-                          Rejection Reason
-                        </p>
-
-                        <p className="text-sm text-red-300">
-                          {
-                            selectedSong.rejection_reason
-                          }
-                        </p>
-
-                      </div>
-
-                    )}
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              {/* COMPLETE MUSIC INFORMATION */}
-
-              <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
-                <div className="flex items-center justify-between gap-4 mb-5">
-
-                  <div>
-
-                    <h3 className="font-semibold">
-                      Music Information
-                    </h3>
-
-                    <p className="text-xs text-white/40 mt-1">
-                      Complete metadata of this song
-                    </p>
-
-                  </div>
-
-                  <span className="text-xl">
-                    🎼
-                  </span>
-
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Song Title
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.song_title ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Artist Name
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.artist_name ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Album Name
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.album_name ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Singer Name
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.singer_name ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Composer
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.composer ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Music Director
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.music_director ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Lyricist
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.lyricist ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Genre
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.genre ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Language
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.language ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Release Date
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {formatReleaseDate(
-                        selectedSong.release_date
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Customer
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.customer_name ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Main Label
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.label_name ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Label Type
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.label_type ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Uploaded Under
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.upload_label ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  {selectedSong.sub_label_name && (
-
-                    <div className="rounded-xl bg-purple-500/[0.05] border border-purple-500/10 p-4">
-
-                      <p className="text-xs text-purple-300/60 mb-1">
-                        Sub Label
-                      </p>
-
-                      <p className="text-sm font-medium text-purple-300">
-                        {
-                          selectedSong.sub_label_name
-                        }
-                      </p>
-
-                    </div>
-
-                  )}
-
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
-                    <p className="text-xs text-white/40 mb-1">
-                      Status
-                    </p>
-
-                    <p className="text-sm font-medium">
-                      {selectedSong.status ||
-                        "Pending"}
-                    </p>
-                  </div>
-
-                </div>
-
-              </div>
-
-              {/* AUDIO SECTION */}
-
-              <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-
-                <div className="flex items-center justify-between gap-4 mb-4">
-
-                  <div>
-
-                    <h3 className="font-semibold">
-                      Audio
-                    </h3>
-
-                    <p className="text-xs text-white/40 mt-1">
-                      Listen or download the original audio
-                    </p>
-
-                  </div>
-
-                  <span className="text-xl">
-                    🎧
-                  </span>
-
-                </div>
-
-                {selectedSong.signed_audio_url ? (
-
-                  <audio
-                    controls
-                    className="w-full"
-                    src={
-                      selectedSong.signed_audio_url
-                    }
+                    style={styles.modalCover}
                   />
-
                 ) : (
+                  <div
+                    style={
+                      styles.modalCoverPlaceholder
+                    }
+                  >
+                    🎵
+                  </div>
+                )}
+              </div>
 
-                  <div className="rounded-xl bg-white/5 p-4 text-sm text-white/40">
-                    Audio file available nahi hai.
+              <div style={styles.detailsGrid}>
+                <DetailItem
+                  label="Song Title"
+                  value={
+                    selectedSong.song_title
+                  }
+                />
+
+                <DetailItem
+                  label="Artist"
+                  value={
+                    selectedSong.artist_name
+                  }
+                />
+
+                <DetailItem
+                  label="Album"
+                  value={
+                    selectedSong.album_name
+                  }
+                />
+
+                <DetailItem
+                  label="Singer"
+                  value={
+                    selectedSong.singer_name
+                  }
+                />
+
+                <DetailItem
+                  label="Composer"
+                  value={
+                    selectedSong.composer
+                  }
+                />
+
+                <DetailItem
+                  label="Music Director"
+                  value={
+                    selectedSong.music_director
+                  }
+                />
+
+                <DetailItem
+                  label="Lyricist"
+                  value={
+                    selectedSong.lyricist
+                  }
+                />
+
+                <DetailItem
+                  label="Genre"
+                  value={
+                    selectedSong.genre
+                  }
+                />
+
+                <DetailItem
+                  label="Language"
+                  value={
+                    selectedSong.language
+                  }
+                />
+
+                <DetailItem
+                  label="Release Date"
+                  value={
+                    selectedSong.release_date
+                  }
+                />
+
+                <DetailItem
+                  label="Customer"
+                  value={
+                    selectedSong.customer_name ||
+                    "Customer Not Found"
+                  }
+                />
+
+                <DetailItem
+                  label="Main Label"
+                  value={
+                    selectedSong.label_name ||
+                    "Not Available"
+                  }
+                />
+
+                <DetailItem
+                  label="Label Type"
+                  value={
+                    selectedSong.label_type ||
+                    "Not Available"
+                  }
+                />
+
+                <DetailItem
+                  label="Uploaded Under"
+                  value={
+                    selectedSong.upload_label ||
+                    selectedSong.sub_label_name ||
+                    selectedSong.label_name ||
+                    "Not Available"
+                  }
+                />
+
+                <DetailItem
+                  label="Status"
+                  value={
+                    selectedSong.status ||
+                    "Pending"
+                  }
+                />
+
+                <DetailItem
+                  label="Created At"
+                  value={
+                    selectedSong.created_at
+                      ? new Date(
+                          selectedSong.created_at
+                        ).toLocaleString(
+                          "en-IN"
+                        )
+                      : null
+                  }
+                />
+              </div>
+
+              {selectedSong.rejection_reason && (
+                <div
+                  style={
+                    styles.modalRejectionBox
+                  }
+                >
+                  <div
+                    style={
+                      styles.modalRejectionTitle
+                    }
+                  >
+                    Rejection Reason
                   </div>
 
-                )}
-
-                {/* DOWNLOAD AUDIO */}
-
-                <button
-                  type="button"
-                  disabled={
-                    downloadLoading === "audio"
-                  }
-                  onClick={() => {
-
-                    const ext =
-                      getFileExtension(
-                        selectedSong.audio_url,
-                        ".mp3"
-                      );
-
-                    const name =
-                      safeFileName(
-                        selectedSong.song_title
-                      );
-
-                    downloadFile(
-                      selectedSong.audio_url,
-                      `${name}${ext}`,
-                      "audio"
-                    );
-
-                  }}
-                  className="w-full mt-4 px-4 py-3 rounded-xl bg-white text-black hover:bg-white/90 transition text-sm font-semibold disabled:opacity-50"
-                >
-
-                  {downloadLoading === "audio"
-                    ? "Downloading..."
-                    : "⬇️ Download Audio"}
-
-                </button>
-
-              </div>
-
-              {/* MODAL ACTIONS */}
-
-              <div className="grid sm:grid-cols-3 gap-3 mt-6">
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    approveSong(
-                      selectedSong.id
-                    )
-                  }
-                  className="px-4 py-3 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-sm font-medium"
-                >
-                  ✓ Approve
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    rejectSong(
-                      selectedSong.id
-                    )
-                  }
-                  className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-sm font-medium"
-                >
-                  ✕ Reject
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    deleteSong(
-                      selectedSong.id
-                    )
-                  }
-                  className="px-4 py-3 rounded-xl bg-red-500/5 text-red-400 hover:bg-red-500/15 transition text-sm font-medium"
-                >
-                  🗑️ Delete
-                </button>
-
-              </div>
-
+                  <div
+                    style={
+                      styles.modalRejectionText
+                    }
+                  >
+                    {
+                      selectedSong.rejection_reason
+                    }
+                  </div>
+                </div>
+              )}
             </div>
 
+            <div style={styles.modalFooter}>
+              <button
+                style={styles.modalPlayButton}
+                onClick={() =>
+                  playSong(selectedSong)
+                }
+              >
+                {playingSongId ===
+                selectedSong.id
+                  ? "⏹ Stop Audio"
+                  : "▶ Play Audio"}
+              </button>
+
+              <button
+                style={
+                  styles.modalDownloadButton
+                }
+                onClick={() =>
+                  downloadAudio(selectedSong)
+                }
+              >
+                ⬇ Download
+              </button>
+
+              <button
+                style={styles.modalDeleteButton}
+                onClick={() =>
+                  deleteSong(selectedSong.id)
+                }
+              >
+                🗑 Delete
+              </button>
+            </div>
           </div>
-
         </div>
-
       )}
 
+      <style jsx>{`
+        .statusApproved {
+          background: rgba(34, 197, 94, 0.15);
+          color: #4ade80;
+          border: 1px solid rgba(34, 197, 94, 0.25);
+        }
+
+        .statusRejected {
+          background: rgba(239, 68, 68, 0.15);
+          color: #f87171;
+          border: 1px solid rgba(239, 68, 68, 0.25);
+        }
+
+        .statusPending {
+          background: rgba(234, 179, 8, 0.15);
+          color: #facc15;
+          border: 1px solid rgba(234, 179, 8, 0.25);
+        }
+
+        .mainLabelBadge {
+          background: rgba(59, 130, 246, 0.15);
+          color: #60a5fa;
+          border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .subLabelBadge {
+          background: rgba(168, 85, 247, 0.15);
+          color: #c084fc;
+          border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+      `}</style>
     </div>
   );
 }
+
+function StatCard({
+  title,
+  value,
+  icon,
+}: {
+  title: string;
+  value: number;
+  icon: string;
+}) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statIcon}>{icon}</div>
+
+      <div>
+        <div style={styles.statValue}>
+          {value}
+        </div>
+
+        <div style={styles.statTitle}>
+          {title}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <div style={styles.detailItem}>
+      <div style={styles.detailLabel}>
+        {label}
+      </div>
+
+      <div style={styles.detailValue}>
+        {value || "—"}
+      </div>
+    </div>
+  );
+}
+
+function CoverImage({
+  coverUrl,
+  title,
+}: {
+  coverUrl: string | null;
+  title: string | null;
+}) {
+  const [src, setSrc] = useState<string | null>(
+    null
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      if (!coverUrl) {
+        return;
+      }
+
+      try {
+        let path = coverUrl;
+
+        if (path.includes("/storage/v1/object/")) {
+          const marker = "/covers/";
+          const index = path.indexOf(marker);
+
+          if (index !== -1) {
+            path = path.substring(
+              index + marker.length
+            );
+          }
+        }
+
+        path = path.replace(/^\/+/, "");
+
+        if (path.startsWith("covers/")) {
+          path = path.substring("covers/".length);
+        }
+
+        const { data, error } =
+          await supabase.storage
+            .from("covers")
+            .createSignedUrl(path, 3600);
+
+        if (
+          !error &&
+          data?.signedUrl &&
+          active
+        ) {
+          setSrc(data.signedUrl);
+        }
+      } catch {
+        // ignore cover error
+      }
+    }
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [coverUrl]);
+
+  if (!src) {
+    return (
+      <div style={styles.coverPlaceholder}>
+        🎵
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={title || "Cover"}
+      style={styles.cover}
+    />
+  );
+}
+
+const styles: Record<string, CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    background:
+      "linear-gradient(135deg, #09090b 0%, #111827 100%)",
+    color: "#f8fafc",
+    display: "flex",
+    fontFamily:
+      "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+  },
+
+  sidebar: {
+    width: "250px",
+    minHeight: "100vh",
+    background: "#09090b",
+    borderRight: "1px solid #27272a",
+    position: "fixed",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    padding: "22px 14px",
+    zIndex: 20,
+  },
+
+  logoBox: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: "8px",
+  },
+
+  logo: {
+    width: "82px",
+    height: "82px",
+    objectFit: "contain",
+    borderRadius: "18px",
+  },
+
+  brandTitle: {
+    textAlign: "center",
+    fontSize: "20px",
+    fontWeight: 800,
+    color: "#ffffff",
+  },
+
+  brandSubTitle: {
+    textAlign: "center",
+    color: "#71717a",
+    fontSize: "11px",
+    marginTop: "3px",
+    marginBottom: "28px",
+  },
+
+  nav: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
+  },
+
+  navButton: {
+    width: "100%",
+    border: "1px solid transparent",
+    background: "transparent",
+    color: "#a1a1aa",
+    padding: "12px 13px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    fontSize: "14px",
+    textAlign: "left",
+  },
+
+  navButtonActive: {
+    background:
+      "linear-gradient(135deg, rgba(59,130,246,.18), rgba(99,102,241,.12))",
+    color: "#ffffff",
+    border: "1px solid rgba(59,130,246,.22)",
+  },
+
+  sidebarBottom: {
+    position: "absolute",
+    left: "14px",
+    right: "14px",
+    bottom: "22px",
+  },
+
+  logoutButton: {
+    width: "100%",
+    background: "rgba(239,68,68,.08)",
+    border: "1px solid rgba(239,68,68,.16)",
+    color: "#fca5a5",
+    padding: "12px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    fontSize: "14px",
+  },
+
+  main: {
+    marginLeft: "250px",
+    width: "calc(100% - 250px)",
+    minHeight: "100vh",
+    padding: "30px",
+  },
+
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "25px",
+  },
+
+  pageTitle: {
+    margin: 0,
+    fontSize: "30px",
+    fontWeight: 800,
+    letterSpacing: "-0.5px",
+  },
+
+  pageSubtitle: {
+    margin: "6px 0 0",
+    color: "#71717a",
+    fontSize: "14px",
+  },
+
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+  },
+
+  adminBadge: {
+    padding: "9px 13px",
+    borderRadius: "10px",
+    background: "rgba(59,130,246,.1)",
+    border: "1px solid rgba(59,130,246,.2)",
+    color: "#93c5fd",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(150px, 1fr))",
+    gap: "14px",
+    marginBottom: "24px",
+  },
+
+  statCard: {
+    background:
+      "linear-gradient(145deg, rgba(24,24,27,.95), rgba(17,24,39,.88))",
+    border: "1px solid #27272a",
+    borderRadius: "15px",
+    padding: "17px",
+    display: "flex",
+    alignItems: "center",
+    gap: "13px",
+    minHeight: "82px",
+  },
+
+  statIcon: {
+    width: "42px",
+    height: "42px",
+    borderRadius: "12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(255,255,255,.05)",
+    fontSize: "20px",
+  },
+
+  statValue: {
+    fontSize: "23px",
+    fontWeight: 800,
+    color: "#ffffff",
+  },
+
+  statTitle: {
+    fontSize: "12px",
+    color: "#71717a",
+    marginTop: "2px",
+  },
+
+  contentCard: {
+    background:
+      "rgba(9,9,11,.72)",
+    border: "1px solid #27272a",
+    borderRadius: "16px",
+    overflow: "hidden",
+  },
+
+  sectionHeader: {
+    padding: "20px",
+    borderBottom: "1px solid #27272a",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "18px",
+    flexWrap: "wrap",
+  },
+
+  sectionTitle: {
+    margin: 0,
+    fontSize: "19px",
+    fontWeight: 800,
+  },
+
+  sectionSubtitle: {
+    margin: "5px 0 0",
+    color: "#71717a",
+    fontSize: "12px",
+  },
+
+  filters: {
+    display: "flex",
+    gap: "9px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
+  searchBox: {
+    width: "260px",
+    display: "flex",
+    alignItems: "center",
+    background: "#18181b",
+    border: "1px solid #3f3f46",
+    borderRadius: "9px",
+    padding: "0 10px",
+  },
+
+  searchIcon: {
+    fontSize: "13px",
+  },
+
+  searchInput: {
+    width: "100%",
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    color: "#ffffff",
+    padding: "10px 8px",
+    fontSize: "13px",
+  },
+
+  filterSelect: {
+    background: "#18181b",
+    color: "#ffffff",
+    border: "1px solid #3f3f46",
+    borderRadius: "9px",
+    padding: "10px 12px",
+    minWidth: "230px",
+    outline: "none",
+    cursor: "pointer",
+    fontSize: "13px",
+  },
+
+  clearFilterButton: {
+    border: "1px solid rgba(239,68,68,.3)",
+    background: "rgba(239,68,68,.1)",
+    color: "#fca5a5",
+    padding: "10px 12px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+
+  tableWrapper: {
+    overflowX: "auto",
+  },
+
+  table: {
+    width: "100%",
+    minWidth: "1350px",
+    borderCollapse: "collapse",
+  },
+
+  th: {
+    textAlign: "left",
+    padding: "13px 14px",
+    background: "#111113",
+    color: "#71717a",
+    fontSize: "11px",
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: ".5px",
+    borderBottom: "1px solid #27272a",
+    whiteSpace: "nowrap",
+  },
+
+  td: {
+    padding: "13px 14px",
+    borderBottom: "1px solid #1f1f23",
+    verticalAlign: "middle",
+  },
+
+  cover: {
+    width: "52px",
+    height: "52px",
+    borderRadius: "9px",
+    objectFit: "cover",
+    border: "1px solid #27272a",
+  },
+
+  coverPlaceholder: {
+    width: "52px",
+    height: "52px",
+    borderRadius: "9px",
+    background: "#18181b",
+    border: "1px solid #27272a",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "19px",
+  },
+
+  songTitle: {
+    fontWeight: 700,
+    color: "#f4f4f5",
+    fontSize: "13px",
+    maxWidth: "190px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  songMeta: {
+    color: "#71717a",
+    fontSize: "11px",
+    marginTop: "4px",
+  },
+
+  artistName: {
+    fontSize: "13px",
+    color: "#e4e4e7",
+    fontWeight: 600,
+  },
+
+  smallText: {
+    color: "#71717a",
+    fontSize: "10px",
+    marginTop: "4px",
+  },
+
+  mutedText: {
+    color: "#52525b",
+    fontSize: "11px",
+  },
+
+  statusBadge: {
+    display: "inline-flex",
+    padding: "5px 8px",
+    borderRadius: "7px",
+    fontSize: "10px",
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  rejectionText: {
+    color: "#fca5a5",
+    fontSize: "11px",
+    maxWidth: "150px",
+    lineHeight: 1.4,
+  },
+
+  customerLabelBox: {
+    minWidth: "170px",
+  },
+
+  customerName: {
+    color: "#e4e4e7",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+
+  labelLine: {
+    marginTop: "6px",
+  },
+
+  labelBadge: {
+    display: "inline-flex",
+    padding: "4px 7px",
+    borderRadius: "6px",
+    fontSize: "9px",
+    fontWeight: 800,
+  },
+
+  uploadLabel: {
+    color: "#a1a1aa",
+    fontSize: "11px",
+    fontWeight: 600,
+    marginTop: "5px",
+    maxWidth: "180px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  playButton: {
+    border: "1px solid rgba(59,130,246,.25)",
+    background: "rgba(59,130,246,.1)",
+    color: "#93c5fd",
+    padding: "7px 9px",
+    borderRadius: "7px",
+    cursor: "pointer",
+    fontSize: "10px",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+
+  approvalButtons: {
+    display: "flex",
+    gap: "6px",
+  },
+
+  approveButton: {
+    width: "31px",
+    height: "31px",
+    borderRadius: "7px",
+    border: "1px solid rgba(34,197,94,.25)",
+    background: "rgba(34,197,94,.1)",
+    color: "#4ade80",
+    cursor: "pointer",
+    fontWeight: 800,
+  },
+
+  rejectButton: {
+    width: "31px",
+    height: "31px",
+    borderRadius: "7px",
+    border: "1px solid rgba(239,68,68,.25)",
+    background: "rgba(239,68,68,.1)",
+    color: "#f87171",
+    cursor: "pointer",
+    fontWeight: 800,
+  },
+
+  actionButtons: {
+    display: "flex",
+    gap: "6px",
+  },
+
+  detailsButton: {
+    border: "1px solid #3f3f46",
+    background: "#18181b",
+    color: "#d4d4d8",
+    padding: "7px 9px",
+    borderRadius: "7px",
+    cursor: "pointer",
+    fontSize: "10px",
+    fontWeight: 700,
+  },
+
+  deleteButton: {
+    border: "1px solid rgba(239,68,68,.25)",
+    background: "rgba(239,68,68,.08)",
+    color: "#f87171",
+    padding: "7px 9px",
+    borderRadius: "7px",
+    cursor: "pointer",
+    fontSize: "10px",
+    fontWeight: 700,
+  },
+
+  emptyState: {
+    padding: "70px 20px",
+    textAlign: "center",
+  },
+
+  emptyIcon: {
+    fontSize: "42px",
+    marginBottom: "12px",
+  },
+
+  emptyTitle: {
+    fontSize: "18px",
+    fontWeight: 800,
+    color: "#e4e4e7",
+  },
+
+  emptyText: {
+    color: "#71717a",
+    fontSize: "13px",
+    marginTop: "5px",
+  },
+
+  loadingScreen: {
+    minHeight: "100vh",
+    background: "#09090b",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    color: "#ffffff",
+  },
+
+  loadingBox: {
+    textAlign: "center",
+  },
+
+  spinner: {
+    width: "34px",
+    height: "34px",
+    border: "3px solid #27272a",
+    borderTop: "3px solid #60a5fa",
+    borderRadius: "50%",
+    margin: "0 auto 12px",
+    animation: "spin 1s linear infinite",
+  },
+
+  loadingText: {
+    color: "#a1a1aa",
+    fontSize: "13px",
+  },
+
+  audioPlayer: {
+    position: "fixed",
+    left: "270px",
+    right: "20px",
+    bottom: "18px",
+    zIndex: 100,
+    background: "#18181b",
+    border: "1px solid #3f3f46",
+    borderRadius: "12px",
+    padding: "10px 13px",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    boxShadow: "0 15px 40px rgba(0,0,0,.45)",
+  },
+
+  audioPlayerTitle: {
+    color: "#d4d4d8",
+    fontSize: "12px",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+
+  audio: {
+    flex: 1,
+    height: "34px",
+  },
+
+  audioClose: {
+    border: "none",
+    background: "transparent",
+    color: "#a1a1aa",
+    cursor: "pointer",
+    fontSize: "16px",
+  },
+
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,.72)",
+    backdropFilter: "blur(5px)",
+    zIndex: 200,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+  },
+
+  modal: {
+    width: "min(900px, 100%)",
+    maxHeight: "90vh",
+    overflowY: "auto",
+    background: "#111113",
+    border: "1px solid #3f3f46",
+    borderRadius: "18px",
+    boxShadow: "0 25px 80px rgba(0,0,0,.6)",
+  },
+
+  modalHeader: {
+    padding: "18px 20px",
+    borderBottom: "1px solid #27272a",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  modalTitle: {
+    margin: 0,
+    fontSize: "19px",
+    fontWeight: 800,
+  },
+
+  modalSubtitle: {
+    color: "#71717a",
+    fontSize: "11px",
+    marginTop: "4px",
+  },
+
+  modalClose: {
+    width: "34px",
+    height: "34px",
+    borderRadius: "8px",
+    border: "1px solid #3f3f46",
+    background: "#18181b",
+    color: "#a1a1aa",
+    cursor: "pointer",
+  },
+
+  modalBody: {
+    padding: "20px",
+  },
+
+  modalCoverBox: {
+    display: "flex",
+    justifyContent: "center",
+    marginBottom: "22px",
+  },
+
+  modalCover: {
+    width: "190px",
+    height: "190px",
+    objectFit: "cover",
+    borderRadius: "14px",
+    border: "1px solid #3f3f46",
+  },
+
+  modalCoverPlaceholder: {
+    width: "190px",
+    height: "190px",
+    borderRadius: "14px",
+    background: "#18181b",
+    border: "1px solid #3f3f46",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    fontSize: "50px",
+  },
+
+  detailsGrid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "10px",
+  },
+
+  detailItem: {
+    background: "#18181b",
+    border: "1px solid #27272a",
+    borderRadius: "10px",
+    padding: "11px 12px",
+  },
+
+  detailLabel: {
+    color: "#71717a",
+    fontSize: "10px",
+    textTransform: "uppercase",
+    letterSpacing: ".4px",
+    fontWeight: 700,
+  },
+
+  detailValue: {
+    color: "#e4e4e7",
+    fontSize: "12px",
+    marginTop: "5px",
+    wordBreak: "break-word",
+  },
+
+  modalRejectionBox: {
+    marginTop: "15px",
+    background: "rgba(239,68,68,.08)",
+    border: "1px solid rgba(239,68,68,.2)",
+    borderRadius: "10px",
+    padding: "12px",
+  },
+
+  modalRejectionTitle: {
+    color: "#f87171",
+    fontSize: "11px",
+    fontWeight: 800,
+    marginBottom: "5px",
+  },
+
+  modalRejectionText: {
+    color: "#fca5a5",
+    fontSize: "12px",
+    lineHeight: 1.5,
+  },
+
+  modalFooter: {
+    padding: "15px 20px",
+    borderTop: "1px solid #27272a",
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+
+  modalPlayButton: {
+    border: "1px solid rgba(59,130,246,.3)",
+    background: "rgba(59,130,246,.1)",
+    color: "#93c5fd",
+    padding: "9px 13px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+
+  modalDownloadButton: {
+    border: "1px solid rgba(34,197,94,.3)",
+    background: "rgba(34,197,94,.1)",
+    color: "#86efac",
+    padding: "9px 13px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+
+  modalDeleteButton: {
+    border: "1px solid rgba(239,68,68,.3)",
+    background: "rgba(239,68,68,.1)",
+    color: "#fca5a5",
+    padding: "9px 13px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+};
