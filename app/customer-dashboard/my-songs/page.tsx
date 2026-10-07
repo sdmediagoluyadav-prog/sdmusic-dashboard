@@ -19,6 +19,11 @@ type Song = {
   audio_url: string | null;
   status: string | null;
   rejection_reason: string | null;
+
+  // NEW: Label information
+  source_label?: string | null;
+  label_type?: string | null;
+
   cover_signed_url?: string | null;
   audio_signed_url?: string | null;
 };
@@ -27,6 +32,17 @@ type Customer = {
   id: number;
   customer_name: string;
   label_name: string | null;
+};
+
+type SubLabelSongRelation = {
+  song_id: number;
+  sub_label_id: number;
+};
+
+type SubLabel = {
+  id: number;
+  customer_id: number;
+  sub_label_name: string;
 };
 
 export default function MySongsPage() {
@@ -99,7 +115,58 @@ export default function MySongsPage() {
         return;
       }
 
+      // ============================================================
+      // NEW: Check which songs belong to which Sub Label
+      // ============================================================
+
+      let subLabelSongRelations: SubLabelSongRelation[] = [];
+      let subLabels: SubLabel[] = [];
+
+      const { data: subLabelSongData, error: subLabelSongError } =
+        await supabase
+          .from("sub_label_songs")
+          .select("song_id, sub_label_id")
+          .in("song_id", songIds);
+
+      if (subLabelSongError) {
+        console.error(
+          "Sub Label Song relation error:",
+          subLabelSongError
+        );
+      } else {
+        subLabelSongRelations = (subLabelSongData ||
+          []) as SubLabelSongRelation[];
+      }
+
+      // Get Sub Label IDs
+      const subLabelIds = [
+        ...new Set(
+          subLabelSongRelations
+            .map((item) => item.sub_label_id)
+            .filter(Boolean)
+        ),
+      ];
+
+      // Get Sub Label names
+      if (subLabelIds.length > 0) {
+        const { data: subLabelData, error: subLabelError } =
+          await supabase
+            .from("sub_labels")
+            .select("id, customer_id, sub_label_name")
+            .in("id", subLabelIds)
+            .eq("customer_id", customerData.id);
+
+        if (subLabelError) {
+          console.error("Sub Label error:", subLabelError);
+        } else {
+          subLabels = (subLabelData || []) as SubLabel[];
+        }
+      }
+
+      // ============================================================
       // Songs details
+      // ============================================================
+
       const { data: songsData, error: songsError } = await supabase
         .from("songs")
         .select(
@@ -129,13 +196,48 @@ export default function MySongsPage() {
         return;
       }
 
-      // Signed URLs
+      // ============================================================
+      // Signed URLs + Label information
+      // ============================================================
+
       const songsWithUrls: Song[] = await Promise.all(
         (songsData || []).map(async (song) => {
           let cover_signed_url: string | null = null;
           let audio_signed_url: string | null = null;
 
+          // --------------------------------------------------------
+          // Find Sub Label for this song
+          // --------------------------------------------------------
+
+          const relation = subLabelSongRelations.find(
+            (item) => item.song_id === song.id
+          );
+
+          const subLabel = subLabels.find(
+            (item) => item.id === relation?.sub_label_id
+          );
+
+          let source_label: string | null = null;
+          let label_type: string | null = null;
+
+          if (subLabel) {
+            // Song uploaded through Sub Label
+            source_label = subLabel.sub_label_name;
+            label_type = "Sub Label";
+          } else {
+            // Song uploaded through Main Label
+            source_label =
+              customerData.label_name ||
+              customerData.customer_name ||
+              "Main Label";
+
+            label_type = "Main Label";
+          }
+
+          // --------------------------------------------------------
           // Cover URL
+          // --------------------------------------------------------
+
           if (song.cover_url) {
             if (song.cover_url.startsWith("http")) {
               cover_signed_url = song.cover_url;
@@ -148,7 +250,10 @@ export default function MySongsPage() {
             }
           }
 
+          // --------------------------------------------------------
           // Audio URL
+          // --------------------------------------------------------
+
           if (song.audio_url) {
             if (song.audio_url.startsWith("http")) {
               audio_signed_url = song.audio_url;
@@ -163,6 +268,11 @@ export default function MySongsPage() {
 
           return {
             ...song,
+
+            // NEW
+            source_label,
+            label_type,
+
             cover_signed_url,
             audio_signed_url,
           };
@@ -190,7 +300,8 @@ export default function MySongsPage() {
       song.song_title?.toLowerCase().includes(searchText) ||
       song.artist_name?.toLowerCase().includes(searchText) ||
       song.album_name?.toLowerCase().includes(searchText) ||
-      song.singer_name?.toLowerCase().includes(searchText);
+      song.singer_name?.toLowerCase().includes(searchText) ||
+      song.source_label?.toLowerCase().includes(searchText);
 
     const matchesStatus =
       statusFilter === "All" ||
@@ -217,6 +328,7 @@ export default function MySongsPage() {
       <aside className="sidebar">
         <div className="logoBox">
           <img src="/sd-logo.png" alt="SD Media" />
+
           <div>
             <div className="logoTitle">SD Media</div>
             <div className="logoSub">Customer Dashboard</div>
@@ -293,6 +405,7 @@ export default function MySongsPage() {
         <header className="topbar">
           <div>
             <h1>My Songs</h1>
+
             <p>
               {customer
                 ? `Welcome, ${customer.customer_name}`
@@ -328,6 +441,7 @@ export default function MySongsPage() {
           <div className="statsGrid">
             <div className="statCard">
               <div className="statIcon blue">🎵</div>
+
               <div>
                 <div className="statLabel">Total Songs</div>
                 <div className="statValue">{songs.length}</div>
@@ -336,6 +450,7 @@ export default function MySongsPage() {
 
             <div className="statCard">
               <div className="statIcon green">✓</div>
+
               <div>
                 <div className="statLabel">Approved</div>
                 <div className="statValue">{approvedCount}</div>
@@ -344,6 +459,7 @@ export default function MySongsPage() {
 
             <div className="statCard">
               <div className="statIcon orange">⏳</div>
+
               <div>
                 <div className="statLabel">Pending</div>
                 <div className="statValue">{pendingCount}</div>
@@ -352,6 +468,7 @@ export default function MySongsPage() {
 
             <div className="statCard">
               <div className="statIcon red">✕</div>
+
               <div>
                 <div className="statLabel">Rejected</div>
                 <div className="statValue">{rejectedCount}</div>
@@ -363,9 +480,10 @@ export default function MySongsPage() {
           <div className="filterBox">
             <div className="searchBox">
               <span>🔍</span>
+
               <input
                 type="text"
-                placeholder="Search by song, artist or album..."
+                placeholder="Search by song, artist, album or label..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -393,6 +511,7 @@ export default function MySongsPage() {
             <div className="songsHeader">
               <div>
                 <h2>All Songs</h2>
+
                 <p>
                   Showing {filteredSongs.length} of {songs.length} songs
                 </p>
@@ -402,13 +521,17 @@ export default function MySongsPage() {
             {loading ? (
               <div className="emptyState">
                 <div className="loader"></div>
+
                 <h3>Loading Songs...</h3>
+
                 <p>Please wait.</p>
               </div>
             ) : filteredSongs.length === 0 ? (
               <div className="emptyState">
                 <div className="emptyIcon">🎵</div>
+
                 <h3>No Songs Found</h3>
+
                 <p>
                   {songs.length === 0
                     ? "You have not uploaded any songs yet."
@@ -485,7 +608,7 @@ export default function MySongsPage() {
 
         .logoBox {
           height: 90px;
-          padding: 18px 18px;
+          padding: 18px;
           display: flex;
           align-items: center;
           gap: 12px;
@@ -861,6 +984,25 @@ export default function MySongsPage() {
           color: #7b8798;
         }
 
+        /* NEW: Label information */
+        .sourceLabel {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          margin-top: 7px;
+          padding: 4px 8px;
+          border-radius: 6px;
+          background: #eff6ff;
+          color: #2563eb;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .sourceLabel.subLabel {
+          background: #f5f3ff;
+          color: #7c3aed;
+        }
+
         .columnLabel {
           font-size: 10px;
           color: #9aa5b5;
@@ -984,6 +1126,24 @@ export default function MySongsPage() {
           color: #334155;
           font-weight: 600;
           word-break: break-word;
+        }
+
+        /* NEW: Label detail badge */
+        .detailLabelType {
+          display: inline-flex;
+          align-items: center;
+          margin-bottom: 5px;
+          padding: 4px 7px;
+          border-radius: 6px;
+          background: #eff6ff;
+          color: #2563eb;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .detailLabelType.subLabelType {
+          background: #f5f3ff;
+          color: #7c3aed;
         }
 
         .rejectionBox {
@@ -1182,6 +1342,8 @@ function SongRow({
     statusClass = "rejected";
   }
 
+  const isSubLabel = song.label_type === "Sub Label";
+
   return (
     <div className="songRow">
       <div className="songMain">
@@ -1195,15 +1357,31 @@ function SongRow({
           <div className="coverPlaceholder">🎵</div>
         )}
 
+        {/* SONG + LABEL */}
         <div>
           <div className="songTitle">{song.song_title}</div>
+
           <div className="songSub">
             {song.singer_name || song.artist_name || "Unknown Artist"}
+          </div>
+
+          {/* NEW: Shows Main Label / Sub Label */}
+          <div
+            className={
+              isSubLabel
+                ? "sourceLabel subLabel"
+                : "sourceLabel"
+            }
+          >
+            {isSubLabel ? "🏷️" : "🏢"}{" "}
+            {song.label_type || "Main Label"}:{" "}
+            {song.source_label || "—"}
           </div>
         </div>
 
         <div className="songColumnHide">
           <div className="columnLabel">Artist</div>
+
           <div className="columnValue">
             {song.artist_name || "—"}
           </div>
@@ -1211,6 +1389,7 @@ function SongRow({
 
         <div className="songColumnHide">
           <div className="columnLabel">Album</div>
+
           <div className="columnValue">
             {song.album_name || "—"}
           </div>
@@ -1218,6 +1397,7 @@ function SongRow({
 
         <div>
           <div className="columnLabel">Status</div>
+
           <span className={`status ${statusClass}`}>
             {song.status || "Pending"}
           </span>
@@ -1245,18 +1425,76 @@ function SongRow({
       {expanded && (
         <div className="details">
           <div className="detailsGrid">
-            <Detail label="Song Title" value={song.song_title} />
-            <Detail label="Artist" value={song.artist_name} />
-            <Detail label="Album" value={song.album_name} />
-            <Detail label="Singer" value={song.singer_name} />
-            <Detail label="Composer" value={song.composer} />
-            <Detail label="Lyricist" value={song.lyricist} />
-            <Detail label="Genre" value={song.genre} />
-            <Detail label="Language" value={song.language} />
+            <Detail
+              label="Song Title"
+              value={song.song_title}
+            />
+
+            <Detail
+              label="Artist"
+              value={song.artist_name}
+            />
+
+            <Detail
+              label="Album"
+              value={song.album_name}
+            />
+
+            <Detail
+              label="Singer"
+              value={song.singer_name}
+            />
+
+            <Detail
+              label="Composer"
+              value={song.composer}
+            />
+
+            <Detail
+              label="Lyricist"
+              value={song.lyricist}
+            />
+
+            <Detail
+              label="Genre"
+              value={song.genre}
+            />
+
+            <Detail
+              label="Language"
+              value={song.language}
+            />
+
             <Detail
               label="Release Date"
               value={song.release_date}
             />
+
+            {/* NEW: Label Type */}
+            <div className="detailItem">
+              <div className="detailLabel">Label Type</div>
+
+              <div
+                className={
+                  isSubLabel
+                    ? "detailLabelType subLabelType"
+                    : "detailLabelType"
+                }
+              >
+                {song.label_type || "Main Label"}
+              </div>
+            </div>
+
+            {/* NEW: Label Name */}
+            <Detail
+              label={
+                isSubLabel
+                  ? "Sub Label Name"
+                  : "Main Label Name"
+              }
+              value={song.source_label}
+            />
+
             <Detail
               label="Status"
               value={song.status || "Pending"}
@@ -1323,6 +1561,24 @@ function SongRow({
         .songSub {
           font-size: 12px;
           color: #7b8798;
+        }
+
+        .sourceLabel {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          margin-top: 7px;
+          padding: 4px 8px;
+          border-radius: 6px;
+          background: #eff6ff;
+          color: #2563eb;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .sourceLabel.subLabel {
+          background: #f5f3ff;
+          color: #7c3aed;
         }
 
         .columnLabel {
@@ -1450,6 +1706,23 @@ function SongRow({
           word-break: break-word;
         }
 
+        .detailLabelType {
+          display: inline-flex;
+          align-items: center;
+          margin-bottom: 5px;
+          padding: 4px 7px;
+          border-radius: 6px;
+          background: #eff6ff;
+          color: #2563eb;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .detailLabelType.subLabelType {
+          background: #f5f3ff;
+          color: #7c3aed;
+        }
+
         .rejectionBox {
           margin-top: 15px;
           padding: 13px;
@@ -1519,7 +1792,10 @@ function Detail({
   return (
     <div className="detailItem">
       <div className="detailLabel">{label}</div>
-      <div className="detailValue">{value || "—"}</div>
+
+      <div className="detailValue">
+        {value || "—"}
+      </div>
 
       <style jsx>{`
         .detailItem {
