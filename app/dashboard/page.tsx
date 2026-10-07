@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -55,6 +55,10 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [songs, setSongs] = useState<Song[]>([]);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [labelFilter, setLabelFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const [stats, setStats] = useState<Stats>({
     totalSongs: 0,
@@ -246,7 +250,10 @@ export default function DashboardPage() {
         setRefreshing(true);
       }
 
+      // =====================================================
       // AUTH CHECK
+      // =====================================================
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -256,7 +263,10 @@ export default function DashboardPage() {
         return;
       }
 
+      // =====================================================
       // ROLE CHECK
+      // =====================================================
+
       try {
         const roleResponse = await fetch(
           "/api/auth/role",
@@ -383,7 +393,7 @@ export default function DashboardPage() {
         });
 
       // =====================================================
-      // LATEST SONGS
+      // ALL SONGS
       // =====================================================
 
       const {
@@ -410,12 +420,11 @@ export default function DashboardPage() {
         `)
         .order("id", {
           ascending: false,
-        })
-        .limit(5);
+        });
 
       if (latestSongsError) {
         console.error(
-          "Latest songs error:",
+          "Songs error:",
           latestSongsError
         );
       }
@@ -482,9 +491,13 @@ export default function DashboardPage() {
       // CUSTOMER IDS
       // =====================================================
 
-      const customerIds = customerSongRows
-        .map((item) => item.customer_id)
-        .filter(Boolean);
+      const customerIds = Array.from(
+        new Set(
+          customerSongRows
+            .map((item) => item.customer_id)
+            .filter(Boolean)
+        )
+      );
 
       let customerRows: any[] = [];
 
@@ -513,9 +526,13 @@ export default function DashboardPage() {
       // SUB LABEL IDS
       // =====================================================
 
-      const subLabelIds = subLabelSongRows
-        .map((item) => item.sub_label_id)
-        .filter(Boolean);
+      const subLabelIds = Array.from(
+        new Set(
+          subLabelSongRows
+            .map((item) => item.sub_label_id)
+            .filter(Boolean)
+        )
+      );
 
       let subLabelRows: SubLabelRow[] = [];
 
@@ -574,7 +591,10 @@ export default function DashboardPage() {
                   subLabelSong?.sub_label_id
               );
 
-            // Label information
+            // =================================================
+            // LABEL INFORMATION
+            // =================================================
+
             let labelType: string | null =
               null;
 
@@ -602,7 +622,10 @@ export default function DashboardPage() {
                 null;
             }
 
-            // Signed URLs
+            // =================================================
+            // SIGNED URLS
+            // =================================================
+
             const signedCoverUrl =
               await createSignedUrl(
                 song.cover_url
@@ -715,6 +738,113 @@ export default function DashboardPage() {
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  // =========================================================
+  // LABEL FILTER OPTIONS
+  // =========================================================
+
+  const labelOptions = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        value: string;
+        labelType: string;
+        name: string;
+      }
+    >();
+
+    songs.forEach((song) => {
+      if (!song.upload_label) return;
+
+      const labelType =
+        song.label_type || "Label";
+
+      const value =
+        `${labelType}::${song.upload_label}`;
+
+      if (!map.has(value)) {
+        map.set(value, {
+          value,
+          labelType,
+          name: song.upload_label,
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        a.name.localeCompare(b.name)
+    );
+  }, [songs]);
+
+  // =========================================================
+  // FILTERED SONGS
+  // =========================================================
+
+  const filteredSongs = useMemo(() => {
+    const search =
+      searchTerm.trim().toLowerCase();
+
+    return songs.filter((song) => {
+      // Search
+      const searchableText = [
+        song.song_title,
+        song.artist_name,
+        song.album_name,
+        song.singer_name,
+        song.customer_name,
+        song.label_name,
+        song.upload_label,
+        song.sub_label_name,
+        song.label_type,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch =
+        !search ||
+        searchableText.includes(search);
+
+      // Label
+      const songLabelValue =
+        song.upload_label
+          ? `${song.label_type || "Label"}::${song.upload_label}`
+          : "";
+
+      const matchesLabel =
+        labelFilter === "all" ||
+        songLabelValue === labelFilter;
+
+      // Status
+      const matchesStatus =
+        statusFilter === "all" ||
+        String(song.status || "")
+          .toLowerCase() ===
+          statusFilter.toLowerCase();
+
+      return (
+        matchesSearch &&
+        matchesLabel &&
+        matchesStatus
+      );
+    });
+  }, [
+    songs,
+    searchTerm,
+    labelFilter,
+    statusFilter,
+  ]);
+
+  // =========================================================
+  // CLEAR FILTERS
+  // =========================================================
+
+  function clearFilters() {
+    setSearchTerm("");
+    setLabelFilter("all");
+    setStatusFilter("all");
+  }
 
   // =========================================================
   // APPROVE SONG
@@ -1266,35 +1396,192 @@ export default function DashboardPage() {
 
             </div>
 
-            {/* RECENT SONGS */}
+            {/* SONGS */}
 
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
 
+              {/* SONG HEADER */}
+
               <div className="p-5 sm:p-6 border-b border-white/10">
 
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
 
                   <div>
 
                     <h3 className="text-lg font-bold">
-                      Recent Songs
+                      All Songs
                     </h3>
 
                     <p className="text-sm text-white/40 mt-1">
-                      Latest uploaded music
+                      Label aur Sub Label ke according songs dekhiye
                     </p>
 
                   </div>
 
-                  <span className="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/50">
-                    Latest 5
+                  <span className="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/50 self-start">
+                    {filteredSongs.length} / {songs.length} Songs
                   </span>
 
                 </div>
 
+                {/* FILTERS */}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1fr_280px_180px_auto] gap-3 mt-5">
+
+                  {/* SEARCH */}
+
+                  <div>
+
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(event) =>
+                        setSearchTerm(
+                          event.target.value
+                        )
+                      }
+                      placeholder="🔎 Song, artist, customer ya label search karein..."
+                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 outline-none focus:border-white/20 text-sm placeholder:text-white/30"
+                    />
+
+                  </div>
+
+                  {/* LABEL FILTER */}
+
+                  <div>
+
+                    <select
+                      value={labelFilter}
+                      onChange={(event) =>
+                        setLabelFilter(
+                          event.target.value
+                        )
+                      }
+                      className="w-full px-4 py-3 rounded-xl bg-[#17171b] border border-white/10 outline-none focus:border-white/20 text-sm text-white"
+                    >
+
+                      <option value="all">
+                        All Labels / Sub Labels
+                      </option>
+
+                      {labelOptions.map(
+                        (option) => (
+                          <option
+                            key={option.value}
+                            value={option.value}
+                          >
+                            {option.labelType}:{" "}
+                            {option.name}
+                          </option>
+                        )
+                      )}
+
+                    </select>
+
+                  </div>
+
+                  {/* STATUS FILTER */}
+
+                  <div>
+
+                    <select
+                      value={statusFilter}
+                      onChange={(event) =>
+                        setStatusFilter(
+                          event.target.value
+                        )
+                      }
+                      className="w-full px-4 py-3 rounded-xl bg-[#17171b] border border-white/10 outline-none focus:border-white/20 text-sm text-white"
+                    >
+
+                      <option value="all">
+                        All Status
+                      </option>
+
+                      <option value="Pending">
+                        Pending
+                      </option>
+
+                      <option value="Approved">
+                        Approved
+                      </option>
+
+                      <option value="Rejected">
+                        Rejected
+                      </option>
+
+                    </select>
+
+                  </div>
+
+                  {/* CLEAR */}
+
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm whitespace-nowrap"
+                  >
+                    ✕ Clear
+                  </button>
+
+                </div>
+
+                {/* SELECTED FILTER INFO */}
+
+                {(labelFilter !== "all" ||
+                  statusFilter !== "all" ||
+                  searchTerm) && (
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+
+                    <span className="text-xs text-white/40">
+                      Filter:
+                    </span>
+
+                    {labelFilter !== "all" && (
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs">
+                        🏷️{" "}
+                        {
+                          labelOptions.find(
+                            (item) =>
+                              item.value ===
+                              labelFilter
+                          )?.labelType
+                        }
+                        :{" "}
+                        {
+                          labelOptions.find(
+                            (item) =>
+                              item.value ===
+                              labelFilter
+                          )?.name
+                        }
+                      </span>
+                    )}
+
+                    {statusFilter !== "all" && (
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 text-xs">
+                        Status:{" "}
+                        {statusFilter}
+                      </span>
+                    )}
+
+                    {searchTerm && (
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
+                        Search:{" "}
+                        {searchTerm}
+                      </span>
+                    )}
+
+                  </div>
+
+                )}
+
               </div>
 
-              {songs.length === 0 ? (
+              {/* SONG LIST */}
+
+              {filteredSongs.length === 0 ? (
 
                 <div className="p-10 text-center">
 
@@ -1303,8 +1590,16 @@ export default function DashboardPage() {
                   </div>
 
                   <p className="text-white/50">
-                    Abhi koi song available nahi hai.
+                    Is filter ke according koi song nahi mila.
                   </p>
+
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="mt-4 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm"
+                  >
+                    Clear Filters
+                  </button>
 
                 </div>
 
@@ -1360,240 +1655,246 @@ export default function DashboardPage() {
 
                     <tbody>
 
-                      {songs.map((song) => (
+                      {filteredSongs.map(
+                        (song) => (
 
-                        <tr
-                          key={song.id}
-                          className="border-b border-white/5 hover:bg-white/[0.02] transition"
-                        >
+                          <tr
+                            key={song.id}
+                            className="border-b border-white/5 hover:bg-white/[0.02] transition"
+                          >
 
-                          {/* COVER */}
+                            {/* COVER */}
 
-                          <td className="px-5 py-4">
+                            <td className="px-5 py-4">
 
-                            <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/5 border border-white/10">
+                              <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/5 border border-white/10">
 
-                              {song.signed_cover_url ? (
+                                {song.signed_cover_url ? (
 
-                                <img
-                                  src={song.signed_cover_url}
-                                  alt={
-                                    song.song_title ||
-                                    "Song"
+                                  <img
+                                    src={
+                                      song.signed_cover_url
+                                    }
+                                    alt={
+                                      song.song_title ||
+                                      "Song"
+                                    }
+                                    className="w-full h-full object-cover"
+                                  />
+
+                                ) : (
+
+                                  <div className="w-full h-full flex items-center justify-center text-xl">
+                                    🎵
+                                  </div>
+
+                                )}
+
+                              </div>
+
+                            </td>
+
+                            {/* SONG */}
+
+                            <td className="px-5 py-4">
+
+                              <div className="max-w-[220px]">
+
+                                <p className="font-semibold truncate">
+                                  {song.song_title ||
+                                    "Untitled Song"}
+                                </p>
+
+                                <p className="text-xs text-white/40 truncate mt-1">
+                                  {song.album_name ||
+                                    "No Album"}
+                                </p>
+
+                              </div>
+
+                            </td>
+
+                            {/* ARTIST */}
+
+                            <td className="px-5 py-4">
+
+                              <p className="text-sm text-white/70">
+                                {song.artist_name ||
+                                  "Unknown Artist"}
+                              </p>
+
+                            </td>
+
+                            {/* STATUS */}
+
+                            <td className="px-5 py-4">
+
+                              <span
+                                className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getStatusClass(
+                                  song.status
+                                )}`}
+                              >
+                                {song.status ||
+                                  "Pending"}
+                              </span>
+
+                            </td>
+
+                            {/* REJECTION */}
+
+                            <td className="px-5 py-4">
+
+                              {song.rejection_reason ? (
+
+                                <p className="max-w-[220px] text-xs text-red-300/80">
+                                  {
+                                    song.rejection_reason
                                   }
-                                  className="w-full h-full object-cover"
+                                </p>
+
+                              ) : (
+
+                                <span className="text-xs text-white/30">
+                                  —
+                                </span>
+
+                              )}
+
+                            </td>
+
+                            {/* CUSTOMER / LABEL */}
+
+                            <td className="px-5 py-4">
+
+                              <div>
+
+                                <p className="text-sm">
+                                  {song.customer_name ||
+                                    "—"}
+                                </p>
+
+                                {song.upload_label && (
+
+                                  <div className="mt-1.5">
+
+                                    <span
+                                      className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-medium ${getLabelClass(
+                                        song.label_type
+                                      )}`}
+                                    >
+                                      {song.label_type ||
+                                        "Label"}
+                                    </span>
+
+                                    <p className="text-xs text-white/50 mt-1">
+                                      {song.upload_label}
+                                    </p>
+
+                                  </div>
+
+                                )}
+
+                              </div>
+
+                            </td>
+
+                            {/* AUDIO */}
+
+                            <td className="px-5 py-4">
+
+                              {song.signed_audio_url ? (
+
+                                <audio
+                                  controls
+                                  preload="none"
+                                  className="w-[230px] h-9"
+                                  src={
+                                    song.signed_audio_url
+                                  }
                                 />
 
                               ) : (
 
-                                <div className="w-full h-full flex items-center justify-center text-xl">
-                                  🎵
-                                </div>
+                                <span className="text-xs text-white/30">
+                                  Audio unavailable
+                                </span>
 
                               )}
 
-                            </div>
+                            </td>
 
-                          </td>
+                            {/* APPROVAL */}
 
-                          {/* SONG */}
+                            <td className="px-5 py-4">
 
-                          <td className="px-5 py-4">
+                              <div className="flex items-center gap-2">
 
-                            <div className="max-w-[220px]">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    approveSong(
+                                      song.id
+                                    )
+                                  }
+                                  className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-xs font-medium"
+                                >
+                                  ✓ Approve
+                                </button>
 
-                              <p className="font-semibold truncate">
-                                {song.song_title ||
-                                  "Untitled Song"}
-                              </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    rejectSong(
+                                      song.id
+                                    )
+                                  }
+                                  className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
+                                >
+                                  ✕ Reject
+                                </button>
 
-                              <p className="text-xs text-white/40 truncate mt-1">
-                                {song.album_name ||
-                                  "No Album"}
-                              </p>
+                              </div>
 
-                            </div>
+                            </td>
 
-                          </td>
+                            {/* ACTION */}
 
-                          {/* ARTIST */}
+                            <td className="px-5 py-4">
 
-                          <td className="px-5 py-4">
+                              <div className="flex flex-col gap-2 w-[120px]">
 
-                            <p className="text-sm text-white/70">
-                              {song.artist_name ||
-                                "Unknown Artist"}
-                            </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedSong(
+                                      song
+                                    )
+                                  }
+                                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 transition text-xs font-medium"
+                                >
+                                  👁️ Details
+                                </button>
 
-                          </td>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    deleteSong(
+                                      song.id
+                                    )
+                                  }
+                                  className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
+                                >
+                                  🗑️ Delete
+                                </button>
 
-                          {/* STATUS */}
+                              </div>
 
-                          <td className="px-5 py-4">
+                            </td>
 
-                            <span
-                              className={`inline-flex px-3 py-1.5 rounded-full text-xs font-medium ${getStatusClass(
-                                song.status
-                              )}`}
-                            >
-                              {song.status ||
-                                "Pending"}
-                            </span>
+                          </tr>
 
-                          </td>
-
-                          {/* REJECTION */}
-
-                          <td className="px-5 py-4">
-
-                            {song.rejection_reason ? (
-
-                              <p className="max-w-[220px] text-xs text-red-300/80">
-                                {song.rejection_reason}
-                              </p>
-
-                            ) : (
-
-                              <span className="text-xs text-white/30">
-                                —
-                              </span>
-
-                            )}
-
-                          </td>
-
-                          {/* CUSTOMER / LABEL */}
-
-                          <td className="px-5 py-4">
-
-                            <div>
-
-                              <p className="text-sm">
-                                {song.customer_name ||
-                                  "—"}
-                              </p>
-
-                              {song.upload_label && (
-
-                                <div className="mt-1.5">
-
-                                  <span
-                                    className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-medium ${getLabelClass(
-                                      song.label_type
-                                    )}`}
-                                  >
-                                    {song.label_type ||
-                                      "Label"}
-                                  </span>
-
-                                  <p className="text-xs text-white/50 mt-1">
-                                    {song.upload_label}
-                                  </p>
-
-                                </div>
-
-                              )}
-
-                            </div>
-
-                          </td>
-
-                          {/* AUDIO */}
-
-                          <td className="px-5 py-4">
-
-                            {song.signed_audio_url ? (
-
-                              <audio
-                                controls
-                                preload="none"
-                                className="w-[230px] h-9"
-                                src={
-                                  song.signed_audio_url
-                                }
-                              />
-
-                            ) : (
-
-                              <span className="text-xs text-white/30">
-                                Audio unavailable
-                              </span>
-
-                            )}
-
-                          </td>
-
-                          {/* APPROVAL */}
-
-                          <td className="px-5 py-4">
-
-                            <div className="flex items-center gap-2">
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  approveSong(
-                                    song.id
-                                  )
-                                }
-                                className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition text-xs font-medium"
-                              >
-                                ✓ Approve
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  rejectSong(
-                                    song.id
-                                  )
-                                }
-                                className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
-                              >
-                                ✕ Reject
-                              </button>
-
-                            </div>
-
-                          </td>
-
-                          {/* ACTION */}
-
-                          <td className="px-5 py-4">
-
-                            <div className="flex flex-col gap-2 w-[120px]">
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setSelectedSong(
-                                    song
-                                  )
-                                }
-                                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 transition text-xs font-medium"
-                              >
-                                👁️ Details
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  deleteSong(
-                                    song.id
-                                  )
-                                }
-                                className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-xs font-medium"
-                              >
-                                🗑️ Delete
-                              </button>
-
-                            </div>
-
-                          </td>
-
-                        </tr>
-
-                      ))}
+                        )
+                      )}
 
                     </tbody>
 
