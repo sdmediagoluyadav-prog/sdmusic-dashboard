@@ -1,0 +1,127 @@
+"use client";
+
+
+
+import { useEffect, useMemo, useState } from "react";
+
+import { useRouter } from "next/navigation";
+
+import { supabase } from "@/lib/supabase";
+
+
+
+type Song = {
+
+  id: number;
+
+  song_title: string | null;
+
+  artist_name: string | null;
+
+  album_name: string | null;
+
+  singer_name: string | null;
+
+  composer: string | null;
+
+  music_director: string | null;
+
+  lyricist: string | null;
+
+  genre: string | null;
+
+  language: string | null;
+
+  release_date: string | null;
+
+  cover_url: string | null;
+
+  audio_url: string | null;
+
+  status: string | null;
+
+  rejection_reason: string | null;
+
+  created_at: string | null;
+
+
+
+  customer_name: string | null;
+
+  label_name: string | null;
+
+
+
+  label_type: "Main Label" | "Sub Label" | null;
+
+  upload_label: string | null;
+
+  sub_label_name: string | null;
+
+};
+
+
+
+type Customer = {
+
+  id: number;
+
+  customer_name: string | null;
+
+  label_name: string | null;
+
+};
+
+
+
+type SubLabel = {
+
+  id: number;
+
+  customer_id: number;
+
+  sub_label_name: string | null;
+
+};
+
+
+
+function normalizeStoragePath(
+  value: string | null,
+  bucket: "covers" | "songs"
+) {
+  if (!value) return "";
+
+  let path = value.trim();
+  if (!path) return "";
+
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    const marker = "/storage/v1/object/";
+    const markerIndex = path.indexOf(marker);
+
+    if (markerIndex !== -1) {
+      path = path.substring(markerIndex + marker.length);
+      path = path.replace(/^(public|sign|authenticated)\//, "");
+
+      const prefix = `${bucket}/`;
+      if (path.startsWith(prefix)) {
+        path = path.substring(prefix.length);
+      }
+
+      try {
+        return decodeURIComponent(path);
+      } catch {
+        return path;
+      }
+    }
+
+    return path;
+  }
+
+  const prefix = `${bucket}/`;
+  if (path.startsWith(prefix)) {
+    path = path.substring(prefix.length);
+  }
+
+  return path.replace(/^\/+/, "");
+}
