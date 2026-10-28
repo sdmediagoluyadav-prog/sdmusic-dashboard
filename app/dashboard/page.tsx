@@ -86,42 +86,52 @@ type SubLabel = {
 
 
 
-function normalizeStoragePath(
-  value: string | null,
-  bucket: "covers" | "songs"
-): string {
-  if (!value) return "";
-
+function getStoragePathInfo(value: string): {
+  path: string;
+  bucketFromUrl: "covers" | "songs" | null;
+} {
   let path = value.trim();
-  if (!path) return "";
+  let bucketFromUrl: "covers" | "songs" | null = null;
 
-  // If a Supabase storage URL was saved, extract its object path.
   if (/^https?:\/\//i.test(path)) {
     try {
       const url = new URL(path);
       const marker = "/storage/v1/object/";
       const markerIndex = url.pathname.indexOf(marker);
-
-      if (markerIndex === -1) return path;
-
-      path = url.pathname.substring(markerIndex + marker.length);
-      path = path.replace(/^(public|sign|authenticated)\//, "");
-      path = path.replace(new RegExp(`^${bucket}\/`), "");
-      path = decodeURIComponent(path);
+      if (markerIndex !== -1) {
+        let objectPath = url.pathname.substring(markerIndex + marker.length);
+        objectPath = objectPath.replace(/^(public|sign|authenticated)\//, "");
+        const firstSlash = objectPath.indexOf("/");
+        if (firstSlash > 0) {
+          const bucketName = objectPath.substring(0, firstSlash);
+          if (bucketName === "covers" || bucketName === "songs") {
+            bucketFromUrl = bucketName;
+            objectPath = objectPath.substring(firstSlash + 1);
+          }
+        }
+        path = decodeURIComponent(objectPath);
+      }
     } catch {
-      return value.trim();
+      // If the URL cannot be parsed, continue by treating it as a storage path.
     }
   }
 
-  path = path.replace(/^\/+/, "");
+  path = path.replace(/^\/+/, "").replace(/\?.*$/, "");
+  return { path, bucketFromUrl };
+}
 
-  // Handle repeated prefixes, e.g. covers/covers/file.jpg.
-  const prefix = `${bucket}/`;
-  while (path.startsWith(prefix)) {
-    path = path.substring(prefix.length);
+function normalizeStoragePath(
+  value: string | null,
+  bucket: "covers" | "songs"
+): string {
+  if (!value?.trim()) return "";
+  const { path } = getStoragePathInfo(value);
+  let normalized = path.replace(/^\/+/, "");
+  // Remove repeated bucket prefixes without removing meaningful folders such as covers/ inside songs.
+  while (normalized.startsWith(`${bucket}/`)) {
+    normalized = normalized.substring(bucket.length + 1);
   }
-
-  return path;
+  return normalized;
 }
 
 async function getSignedStorageUrl(
@@ -129,52 +139,73 @@ async function getSignedStorageUrl(
   bucket: "covers" | "songs"
 ): Promise<string | null> {
   if (!value?.trim()) return null;
-
   const original = value.trim();
 
-  // External URLs do not need a Supabase signed URL.
+  // A normal external image URL can be used directly.
   if (/^https?:\/\//i.test(original)) {
     try {
       const url = new URL(original);
-      if (!url.pathname.includes("/storage/v1/object/")) {
-        return original;
-      }
+      if (!url.pathname.includes("/storage/v1/object/")) return original;
     } catch {
-      // Try the value as a storage path below.
+      return original;
     }
   }
 
-  const normalized = normalizeStoragePath(original, bucket);
-  if (!normalized) return null;
+  const info = getStoragePathInfo(original);
+  const cleaned = info.path.replace(/^\/+/, "");
+  const requestedNormalized = normalizeStoragePath(cleaned, bucket);
+  const candidates: Array<{ bucket: "covers" | "songs"; path: string }> = [];
+  const add = (storageBucket: "covers" | "songs", path: string) => {
+    const cleanPath = path.replace(/^\/+/, "").replace(/\?.*$/, "");
+    if (cleanPath && !candidates.some((item) => item.bucket === storageBucket && item.path === cleanPath)) {
+      candidates.push({ bucket: storageBucket, path: cleanPath });
+    }
+  };
 
-  // Try common legacy path formats. The second candidate handles objects
-  // that are actually stored under a folder named after the bucket.
-  const candidates = Array.from(
-    new Set([
-      normalized,
-      `${bucket}/${normalized}`,
-      normalized.replace(new RegExp(`^(?:${bucket}/)+`), ""),
-    ])
-  ).filter(Boolean);
+  // Try the bucket explicitly identified by a Supabase URL first, then both known buckets.
+  const buckets: Array<"covers" | "songs"> = info.bucketFromUrl
+    ? [info.bucketFromUrl, ...(info.bucketFromUrl === "songs" ? ["covers" as const] : ["songs" as const])]
+    : bucket === "covers" ? ["songs", "covers"] : ["songs", "covers"];
+
+  for (const storageBucket of buckets) {
+    // Original paths may include bucket names or nested folders.
+    add(storageBucket, cleaned);
+    add(storageBucket, requestedNormalized);
+
+    for (const prefix of ["covers/", "songs/", "covers/covers/", "songs/covers/", "covers/songs/"]) {
+      if (cleaned.startsWith(prefix)) add(storageBucket, cleaned.substring(prefix.length));
+    }
+
+    // Common locations used by this project: root, covers/ folder in songs, and covers bucket.
+    const fileName = cleaned.split("/").filter(Boolean).pop() || "";
+    if (fileName) {
+      add(storageBucket, fileName);
+      add(storageBucket, `covers/${fileName}`);
+      add(storageBucket, `songs/${fileName}`);
+    }
+
+    // Preserve a nested path while trying the common folder variations.
+    if (requestedNormalized) {
+      add(storageBucket, `covers/${requestedNormalized}`);
+      add(storageBucket, `songs/${requestedNormalized}`);
+      add(storageBucket, `covers/covers/${requestedNormalized}`);
+    }
+  }
 
   let lastError: unknown = null;
-
-  for (const path of candidates) {
+  for (const candidate of candidates) {
     const { data, error } = await supabase.storage
-      .from(bucket)
-      .createSignedUrl(path, 3600);
-
+      .from(candidate.bucket)
+      .createSignedUrl(candidate.path, 3600);
     if (!error && data?.signedUrl) return data.signedUrl;
     lastError = error;
   }
 
-  console.error(`Unable to create signed URL for ${bucket}:`, {
+  console.error("Unable to create signed URL for poster/storage object:", {
     originalValue: original,
-    normalizedPath: normalized,
-    triedPaths: candidates,
+    candidatesTried: candidates,
     error: lastError,
   });
-
   return null;
 }
 
